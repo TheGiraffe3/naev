@@ -16,6 +16,8 @@
 
 #include "array.h"
 #include "log.h"
+#include "nlua_canvas.h"
+#include "nlua_faction.h"
 #include "nlua_outfit.h"
 #include "nlua_tex.h"
 #include "nluadef.h"
@@ -36,6 +38,7 @@ static int shipL_nameRaw( lua_State *L );
 static int shipL_baseType( lua_State *L );
 static int shipL_class( lua_State *L );
 static int shipL_classDisplay( lua_State *L );
+static int shipL_faction( lua_State *L );
 static int shipL_fabricator( lua_State *L );
 static int shipL_crew( lua_State *L );
 static int shipL_mass( lua_State *L );
@@ -61,6 +64,7 @@ static int shipL_getShipStat( lua_State *L );
 static int shipL_getShipStatDesc( lua_State *L );
 static int shipL_known( lua_State *L );
 static int shipL_tags( lua_State *L );
+static int shipL_render( lua_State *L );
 
 static const luaL_Reg shipL_methods[] = {
    { "__tostring", shipL_name },
@@ -72,6 +76,7 @@ static const luaL_Reg shipL_methods[] = {
    { "baseType", shipL_baseType },
    { "class", shipL_class },
    { "classDisplay", shipL_classDisplay },
+   { "faction", shipL_faction },
    { "fabricator", shipL_fabricator },
    { "crew", shipL_crew },
    { "mass", shipL_mass },
@@ -97,6 +102,7 @@ static const luaL_Reg shipL_methods[] = {
    { "shipstatDesc", shipL_getShipStatDesc },
    { "known", shipL_known },
    { "tags", shipL_tags },
+   { "render", shipL_render },
    { 0, 0 } }; /**< Ship metatable methods. */
 
 /**
@@ -361,6 +367,25 @@ static int shipL_classDisplay( lua_State *L )
 }
 
 /**
+ * @brief Gets the faction of a ship.
+ *
+ * @usage shipclass = s:faction()
+ *
+ *    @luatparam Ship s Ship to get faction of.
+ *    @luatreturn Faction The faction of the ship, or nil if not applicable.
+ * @luafunc faction
+ */
+static int shipL_faction( lua_State *L )
+{
+   const Ship *s = luaL_validship( L, 1 );
+   if ( faction_isFaction( s->faction ) ) {
+      lua_pushfaction( L, s->faction );
+      return 1;
+   }
+   return 0;
+}
+
+/**
  * @brief Gets the raw (untranslated) fabricator of the ship.
  *
  *    @luatparam Ship s Ship to get fabricator of.
@@ -568,6 +593,10 @@ static int shipL_getSlots( lua_State *L )
          lua_pushboolean( L, sslot->locked ); /* value */
          lua_rawset( L, -3 );                 /* table[key] = value */
 
+         lua_pushstring( L, "visible" );       /* key */
+         lua_pushboolean( L, sslot->visible ); /* value */
+         lua_rawset( L, -3 );                  /* table[key] = value */
+
          if ( sslot->data != NULL ) {
             lua_pushstring( L, "outfit" );    /* key */
             lua_pushoutfit( L, sslot->data ); /* value*/
@@ -695,6 +724,7 @@ static int shipL_getSize( lua_State *L )
  * @usage gfx = s:gfxComm()
  *
  *    @luatparam Ship s Ship to get comm graphics of.
+ *    @luatparam[opt=512] number resolution Resolution to render the image at.
  *    @luatreturn Tex The comm graphics of the ship.
  * @luafunc gfxComm
  */
@@ -889,4 +919,44 @@ static int shipL_tags( lua_State *L )
 {
    const Ship *s = luaL_validship( L, 1 );
    return nlua_helperTags( L, 2, s->tags );
+}
+
+/**
+ * @brief Renders the pilot to a canvas
+ *
+ *    @luatparam Ship s Ship to render on the screen.
+ *    @luatparam number dir Direction the ship should be facing (in radians).
+ *    @luatparam number engineglow How much engine glow to render with.
+ *    @luatparam number tilt How much to tilt the ship (in radians).
+ *    @luatreturn Canvas The canvas with the pilot drawn on it.
+ * @luafunc render
+ */
+static int shipL_render( lua_State *L )
+{
+   LuaCanvas_t lc;
+   int         w, h, sx, sy;
+   const Ship *s    = luaL_validship( L, 1 );
+   double      dir  = luaL_checknumber( L, 2 );
+   double      eg   = luaL_optnumber( L, 3, 0. );
+   double      tilt = luaL_optnumber( L, 4, 0. );
+
+   ship_gfxLoad( (Ship *)s );
+
+   gl_getSpriteFromDir( &sx, &sy, s->sx, s->sy, dir );
+
+   w = s->size;
+   h = s->size;
+   if ( canvas_new( &lc, w, h ) )
+      return NLUA_ERROR( L, _( "Error setting up framebuffer!" ) );
+
+   /* The code path below is really buggy.
+    * 1. engine_glow seems to scale 3D models improperly when interpolating, so
+    * it's disabled.
+    * 2. for some reason, have to pass real dimensions and not fbo dimensions.
+    * TODO fix this shit. */
+   ship_renderFramebuffer( s, lc.fbo, gl_screen.rw, gl_screen.rh, dir, eg, tilt,
+                           0., sx, sy, NULL, NULL );
+
+   lua_pushcanvas( L, lc );
+   return 1;
 }

@@ -367,7 +367,7 @@ static void think_seeker( Weapon *w, double dt )
    case WEAPON_STATUS_LOCKING: /* Check to see if we can get a lock on. */
       w->timer2 -= dt;
       if ( w->timer2 >= 0. )
-         weapon_setAccel( w, w->outfit->u.lau.accel );
+         weapon_setAccel( w, w->outfit->u.lau.accel * w->accel_mod );
       else
          w->status = WEAPON_STATUS_OK; /* Weapon locked on. */
       /* Can't get jammed while locking on. */
@@ -386,12 +386,12 @@ static void think_seeker( Weapon *w, double dt )
                   w->status = WEAPON_STATUS_JAMMED;
                } else if ( r < 0.6 ) {
                   w->status = WEAPON_STATUS_JAMMED;
-                  weapon_setTurn( w, w->outfit->u.lau.turn *
+                  weapon_setTurn( w, w->outfit->u.lau.turn * w->turn_mod *
                                         ( ( RNGF() > 0.5 ) ? -1.0 : 1.0 ) );
                } else if ( r < 0.8 ) {
                   w->status = WEAPON_STATUS_JAMMED;
                   weapon_setTurn( w, 0. );
-                  weapon_setAccel( w, w->outfit->u.lau.accel );
+                  weapon_setAccel( w, w->outfit->u.lau.accel * w->accel_mod );
                } else {
                   w->status  = WEAPON_STATUS_JAMMED_SLOWED;
                   w->falloff = RNGF() * 0.5;
@@ -403,9 +403,9 @@ static void think_seeker( Weapon *w, double dt )
       }
       FALLTHROUGH;
 
-   case WEAPON_STATUS_JAMMED_SLOWED:    /* Slowed down. */
-   case WEAPON_STATUS_UNJAMMED:         /* Work as expected */
-      turn_max = w->outfit->u.lau.turn; // * ewtrack;
+   case WEAPON_STATUS_JAMMED_SLOWED:                  /* Slowed down. */
+   case WEAPON_STATUS_UNJAMMED:                       /* Work as expected */
+      turn_max = w->outfit->u.lau.turn * w->turn_mod; // * ewtrack;
       if ( w->status == WEAPON_STATUS_JAMMED_SLOWED )
          turn_max *= w->falloff;
 
@@ -459,8 +459,9 @@ static void think_seeker( Weapon *w, double dt )
       else {
          double diff = angle_diff( w->solid.dir, /* Get angle to target pos */
                                    vec2_angle( &w->solid.pos, &p->solid.pos ) );
-         weapon_setTurn( w, CLAMP( -turn_max, turn_max,
-                                   10 * diff * w->outfit->u.lau.turn ) );
+         weapon_setTurn(
+            w, CLAMP( -turn_max, turn_max,
+                      10 * diff * w->outfit->u.lau.turn * w->turn_mod ) );
       }
       break;
 
@@ -474,11 +475,13 @@ static void think_seeker( Weapon *w, double dt )
    }
 
    /* Slow off based on falloff. */
-   speed_mod = ( w->status == WEAPON_STATUS_JAMMED_SLOWED ) ? w->falloff : 1.;
+   speed_mod = w->speed_mod;
+   speed_mod *= ( w->status == WEAPON_STATUS_JAMMED_SLOWED ) ? w->falloff : 1.;
 
    /* Limit speed here */
-   w->real_vel = MIN( speed_mod * w->outfit->u.lau.speed_max,
-                      w->real_vel + w->outfit->u.lau.accel * dt );
+   w->real_vel =
+      MIN( speed_mod * w->outfit->u.lau.speed_max,
+           w->real_vel + w->outfit->u.lau.accel * w->accel_mod * dt );
    vec2_pset( &w->solid.vel, /* ewtrack * */ w->real_vel, w->solid.dir );
 
    /* Modulate max speed. */
@@ -499,6 +502,7 @@ static void think_beam( Weapon *w, double dt )
    vec2             v;
    PilotOutfitSlot *slot;
    unsigned int     turn_off;
+   double           rate;
 
    /* Get pilot, if pilot is dead beam is destroyed. */
    p = pilot_get( w->parent );
@@ -507,12 +511,17 @@ static void think_beam( Weapon *w, double dt )
       return;
    }
    slot = w->mount;
-   dt *= p->stats.time_speedup; /* Have to consider time speedup here. */
+   if ( slot->outfit->type == OUTFIT_TYPE_BEAM )
+      rate = p->stats.fwd_firerate;
+   else
+      rate = p->stats.tur_firerate;
+   dt *= p->stats.time_speedup * rate *
+         p->stats.weapon_firerate; /* Have to consider time speedup here. */
 
    /* Check if pilot has enough energy left to keep beam active. */
    mod = ( w->outfit->type == OUTFIT_TYPE_BEAM ) ? p->stats.fwd_energy
                                                  : p->stats.tur_energy;
-   p->energy -= mod * dt * w->outfit->u.bem.energy;
+   p->energy -= mod * dt * w->outfit->u.bem.energy * p->stats.weapon_energy;
    pilot_heatAddSlotTime( p, slot, dt );
    if ( p->energy < 0. ) {
       p->energy = 0.;
@@ -542,12 +551,12 @@ static void think_beam( Weapon *w, double dt )
       turn_off = 1;
       if ( t != NULL ) {
          if ( vec2_dist( &p->solid.pos, &t->solid.pos ) <=
-              slot->outfit->u.bem.range )
+              slot->outfit->u.bem.range * w->range_mod )
             turn_off = 0;
       }
       if ( ast != NULL ) {
          if ( vec2_dist( &p->solid.pos, &ast->sol.pos ) <=
-              slot->outfit->u.bem.range )
+              slot->outfit->u.bem.range * w->range_mod )
             turn_off = 0;
       }
 
@@ -700,13 +709,26 @@ void weapons_updateCollide( double dt )
 
       /* Beam weapons handled a part. */
       case OUTFIT_TYPE_BEAM:
-      case OUTFIT_TYPE_TURRET_BEAM:
+      case OUTFIT_TYPE_TURRET_BEAM: {
+         double       rate, beamdt;
+         const Pilot *p = pilot_get( w->parent );
+         if ( p == NULL ) {
+            weapon_miss( w );
+            break;
+         }
+         if ( w->mount->outfit->type == OUTFIT_TYPE_BEAM )
+            rate = p->stats.fwd_firerate;
+         else
+            rate = p->stats.tur_firerate;
+         beamdt =
+            dt * p->stats.time_speedup * rate *
+            p->stats.weapon_firerate; /* Have to consider time speedup here. */
          /* Beams don't have inherent accuracy, so we use the
           * heatAccuracyMod to modulate duration. */
-         w->timer -= dt / ( 1. - pilot_heatAccuracyMod( w->mount->heat_T ) );
+         w->timer -=
+            beamdt / ( 1. - pilot_heatAccuracyMod( w->mount->heat_T ) );
          if ( w->timer < 0. || ( w->outfit->u.bem.min_duration > 0. &&
                                  w->mount->stimer < 0. ) ) {
-            const Pilot *p = pilot_get( w->parent );
             if ( p != NULL )
                pilot_stopBeam( p, w->mount );
             weapon_miss( w );
@@ -717,7 +739,7 @@ void weapons_updateCollide( double dt )
          w->timer2 -= dt;
          if ( w->timer2 < -1. )
             w->timer2 = 0.100;
-         break;
+      } break;
       default:
          WARN( _( "Weapon of type '%s' has no update implemented yet!" ),
                w->outfit->name );
@@ -774,6 +796,7 @@ static void weapon_renderBeam( Weapon *w, double dt )
 {
    double x, y, z;
    mat4   projection;
+   double range = w->outfit->u.bem.range * w->range_mod;
 
    /* Animation. */
    w->anim += dt;
@@ -790,8 +813,7 @@ static void weapon_renderBeam( Weapon *w, double dt )
    projection = gl_view_matrix;
    mat4_translate_xy( &projection, x, y );
    mat4_rotate2d( &projection, w->solid.dir );
-   mat4_scale_xy( &projection, w->outfit->u.bem.range * z,
-                  w->outfit->u.bem.width * z );
+   mat4_scale_xy( &projection, range * z, w->outfit->u.bem.width * z );
    mat4_translate_xy( &projection, 0., -0.5 );
 
    /* Set the vertex. */
@@ -802,8 +824,7 @@ static void weapon_renderBeam( Weapon *w, double dt )
    /* Set shader uniforms. */
    gl_uniformMat4( shaders.beam.projection, &projection );
    gl_uniformColour( shaders.beam.colour, &w->outfit->u.bem.colour );
-   glUniform2f( shaders.beam.dimensions, w->outfit->u.bem.range,
-                w->outfit->u.bem.width );
+   glUniform2f( shaders.beam.dimensions, range, w->outfit->u.bem.width );
    glUniform1f( shaders.beam.dt, w->anim );
    glUniform1f( shaders.beam.r, w->r );
 
@@ -1231,24 +1252,27 @@ static void weapon_updateCollide( Weapon *w, double dt )
       if ( p != NULL ) {
          /* Beams need to update their properties online. */
          if ( w->outfit->type == OUTFIT_TYPE_BEAM ) {
-            w->dam_mod        = p->stats.fwd_damage;
+            w->dam_mod        = p->stats.fwd_damage * p->stats.weapon_damage;
             w->dam_as_dis_mod = p->stats.fwd_dam_as_dis - 1.;
+            w->range_mod      = p->stats.fwd_range * p->stats.weapon_range;
          } else {
-            w->dam_mod        = p->stats.tur_damage;
+            w->dam_mod        = p->stats.tur_damage * p->stats.weapon_damage;
             w->dam_as_dis_mod = p->stats.tur_dam_as_dis - 1.;
+            w->range_mod      = p->stats.tur_range * p->stats.weapon_range;
          }
          w->dam_as_dis_mod = CLAMP( 0., 1., w->dam_as_dis_mod );
       }
-      wc.gfx       = NULL;
-      wc.polygon   = NULL;
-      wc.range     = w->outfit->u.bem.width * 0.5; /* Set beam range. */
-      wc.beamrange = w->outfit->u.bem.range;       /* Set beam range. */
+      wc.gfx     = NULL;
+      wc.polygon = NULL;
+      wc.range   = w->outfit->u.bem.width * 0.5; /* Set beam width. */
+      wc.beamrange =
+         w->outfit->u.bem.range * w->range_mod; /* Set beam range. */
 
       /* Determine quadtree location. */
       x1 = round( w->solid.pos.x );
       y1 = round( w->solid.pos.y );
-      x2 = x1 + ceil( w->outfit->u.bem.range * cos( w->solid.dir ) );
-      y2 = y1 + ceil( w->outfit->u.bem.range * sin( w->solid.dir ) );
+      x2 = x1 + ceil( wc.beamrange * cos( w->solid.dir ) );
+      y2 = y1 + ceil( wc.beamrange * sin( w->solid.dir ) );
       if ( x1 > x2 ) {
          int t = x1;
          x1    = x2;
@@ -1470,7 +1494,8 @@ static void weapon_update( Weapon *w, double dt )
  */
 static void weapon_sample_trail( Weapon *w )
 {
-   double    a, dx, dy;
+   double    a, dx, dy, ax, ay;
+   double    ca, sa;
    TrailMode mode;
 
    if ( !space_needsEffects() )
@@ -1478,8 +1503,12 @@ static void weapon_sample_trail( Weapon *w )
 
    /* Compute the engine offset. */
    a  = w->solid.dir;
-   dx = w->outfit->u.lau.trail_x_offset * cos( a );
-   dy = w->outfit->u.lau.trail_x_offset * sin( a );
+   ca = cos( a );
+   sa = sin( a );
+   dx = w->outfit->u.lau.trail_x_offset * ca;
+   dy = w->outfit->u.lau.trail_x_offset * sa;
+   ax = w->solid.accel * -ca;
+   ay = w->solid.accel * -sa;
 
    /* Set the colour. */
    if ( ( w->outfit->u.lau.ai == AMMO_AI_UNGUIDED ) ||
@@ -1492,7 +1521,7 @@ static void weapon_sample_trail( Weapon *w )
       mode = MODE_IDLE;
 
    spfx_trail_sample( w->trail, w->solid.pos.x + dx,
-                      w->solid.pos.y + dy * M_SQRT1_2, 0., mode, 0 );
+                      w->solid.pos.y + dy * M_SQRT1_2, 0., ax, ay, mode, 0 );
 }
 
 /**
@@ -1886,7 +1915,8 @@ static void weapon_hitBeam( Weapon *w, const WeaponHit *hit, double dt )
       firerate = parent->stats.tur_firerate;
    else
       firerate = parent->stats.fwd_firerate;
-   mod = w->dam_mod * w->strength * firerate * parent->stats.time_speedup * dt;
+   mod = w->dam_mod * w->strength * firerate * parent->stats.weapon_firerate *
+         parent->stats.time_speedup * dt;
    damage          = odmg->damage * mod;
    dmg.damage      = MAX( 0., damage * ( 1. - w->dam_as_dis_mod ) );
    dmg.penetration = odmg->penetration;
@@ -2103,12 +2133,12 @@ static double weapon_aimTurretAngle( const Outfit *outfit, const Pilot *parent,
 
    /* For unguided rockets: use a FD quasi-Newton algorithm to aim better. */
    if ( outfit_isLauncher( outfit ) && outfit->u.lau.accel > 0. ) {
-      double vmin = outfit->u.lau.speed;
+      double vmin = outfit->u.lau.speed * parent->stats.launch_speed;
 
       if ( vmin > 0. ) {
          /* Get various details. */
          double tt, ddir, acc, pxv, ang, dvx, dvy;
-         acc = outfit->u.lau.accel;
+         acc = outfit->u.lau.accel * parent->stats.launch_accel;
 
          /* Get the relative velocity. */
          dvx = lead * ( target_vel->x - vel->x );
@@ -2305,13 +2335,15 @@ static void weapon_createBolt( Weapon *w, const Outfit *outfit, double T,
 
    /* Stat modifiers. */
    if ( outfit->type == OUTFIT_TYPE_TURRET_BOLT ) {
-      w->dam_mod *= parent->stats.tur_damage;
+      w->dam_mod *= parent->stats.tur_damage * parent->stats.weapon_damage;
       /* dam_as_dis is computed as multiplier, must be corrected. */
       w->dam_as_dis_mod = parent->stats.tur_dam_as_dis - 1.;
+      w->range_mod      = parent->stats.tur_range * parent->stats.weapon_range;
    } else {
-      w->dam_mod *= parent->stats.fwd_damage;
+      w->dam_mod *= parent->stats.fwd_damage * parent->stats.weapon_damage;
       /* dam_as_dis is computed as multiplier, must be corrected. */
       w->dam_as_dis_mod = parent->stats.fwd_dam_as_dis - 1.;
+      w->range_mod      = parent->stats.fwd_range * parent->stats.weapon_range;
    }
    /* Clamping, but might not actually be necessary if weird things want to be
     * done. */
@@ -2328,7 +2360,7 @@ static void weapon_createBolt( Weapon *w, const Outfit *outfit, double T,
    if ( outfit->u.blt.speed_dispersion > 0. )
       m += RNG_1SIGMA() * outfit->u.blt.speed_dispersion;
    vec2_cadd( &v, m * cos( rdir ), m * sin( rdir ) );
-   w->timer   = outfit->u.blt.range / outfit->u.blt.speed;
+   w->timer   = outfit->u.blt.range / outfit->u.blt.speed * w->range_mod;
    w->falloff = w->timer - outfit->u.blt.falloff / outfit->u.blt.speed;
    solid_init( &w->solid, mass, rdir, pos, &v, SOLID_UPDATE_EULER );
    w->voice = sound_playPos( w->outfit->u.blt.sound, w->solid.pos.x,
@@ -2381,12 +2413,15 @@ static void weapon_createAmmo( Weapon *w, const Outfit *outfit, double T,
    /* Make sure angle is in range. */
    rdir = angle_clean( rdir );
 
-   /* Launcher damage. */
+   /* Snapshot. */
    w->dam_mod *= parent->stats.launch_damage;
+   w->accel_mod = parent->stats.launch_accel;
+   w->speed_mod = parent->stats.launch_speed;
+   w->turn_mod  = parent->stats.launch_turn;
 
    /* If accel is 0. we assume it starts out at speed. */
    v = *vel;
-   m = outfit->u.lau.speed;
+   m = outfit->u.lau.speed * w->speed_mod;
    if ( outfit->u.lau.speed_dispersion > 0. )
       m += RNG_1SIGMA() * outfit->u.lau.speed_dispersion;
    vec2_cadd( &v, m * cos( rdir ), m * sin( rdir ) );
@@ -2394,13 +2429,14 @@ static void weapon_createAmmo( Weapon *w, const Outfit *outfit, double T,
 
    /* Set up ammo details. */
    mass     = w->outfit->u.lau.ammo_mass;
-   w->timer = w->outfit->u.lau.duration * parent->stats.launch_range;
+   w->timer = w->outfit->u.lau.duration * parent->stats.launch_range *
+              parent->stats.weapon_range;
    solid_init( &w->solid, mass, rdir, pos, &v, SOLID_UPDATE_EULER );
    if ( w->outfit->u.lau.accel > 0. ) {
-      weapon_setAccel( w, w->outfit->u.lau.accel );
+      weapon_setAccel( w, w->outfit->u.lau.accel * w->accel_mod );
       /* Limit speed, we only relativize in the case it has accel + initial
        * speed. */
-      w->solid.speed_max = w->outfit->u.lau.speed_max;
+      w->solid.speed_max = w->outfit->u.lau.speed_max * w->speed_mod;
       if ( w->outfit->u.lau.speed > 0. )
          w->solid.speed_max = -1; /* No limit. */
    }
@@ -2475,10 +2511,14 @@ static int weapon_create( Weapon *w, PilotOutfitSlot *po, const Outfit *ref,
    w->id      = ++weapon_idgen;
    w->layer   = ( parent->id == PLAYER_ID ) ? WEAPON_LAYER_FG : WEAPON_LAYER_BG;
    w->mount   = po;
-   w->dam_mod = 1.;                     /* Default of 100% damage. */
-   w->dam_as_dis_mod = 0.;              /* Default of 0% damage to disable. */
-   w->faction        = parent->faction; /* non-changeable */
-   w->parent         = parent->id;      /* non-changeable */
+   w->dam_mod = 1.;   /* Default of 100% damage. */
+   w->range_mod = 1.; /* Default of 100% range. */
+   w->accel_mod = 1.;
+   w->speed_mod = 1.;
+   w->turn_mod  = 1.;
+   // w->dam_as_dis_mod = 0.;   /* Default of 0% damage to disable. */
+   w->faction = parent->faction;                   /* non-changeable */
+   w->parent  = parent->id;                        /* non-changeable */
    memcpy( &w->target, target, sizeof( Target ) ); /* non-changeable */
    w->lua_mem = LUA_NOREF;
    if ( po != NULL && po->lua_mem != LUA_NOREF ) {
@@ -2559,11 +2599,13 @@ static int weapon_create( Weapon *w, PilotOutfitSlot *po, const Outfit *ref,
                         w->solid.vel.x, w->solid.vel.y );
 
       if ( outfit->type == OUTFIT_TYPE_BEAM ) {
-         w->dam_mod *= parent->stats.fwd_damage;
+         w->dam_mod *= parent->stats.fwd_damage * parent->stats.weapon_damage;
          w->dam_as_dis_mod = parent->stats.fwd_dam_as_dis - 1.;
+         w->range_mod = parent->stats.fwd_range * parent->stats.weapon_range;
       } else {
-         w->dam_mod *= parent->stats.tur_damage;
+         w->dam_mod *= parent->stats.tur_damage * parent->stats.weapon_damage;
          w->dam_as_dis_mod = parent->stats.tur_dam_as_dis - 1.;
+         w->range_mod = parent->stats.tur_range * parent->stats.weapon_range;
       }
       w->dam_as_dis_mod = CLAMP( 0., 1., w->dam_as_dis_mod );
 

@@ -113,6 +113,8 @@ static const ShipStatsLookup ss_lookup[] = {
             N_( "Energy Regeneration" ) ),
    D__ELEM( SS_TYPE_D_CPU_MOD, cpu_mod, N_( "CPU Capacity" ) ),
    DI_ELEM( SS_TYPE_D_COOLDOWN_MOD, cooldown_mod, N_( "Ability Cooldown" ) ),
+   DI_ELEM( SS_TYPE_D_SHIELDDOWN_MOD, shielddown_mod,
+            N_( "Shield Down Time" ) ),
 
    DI_ELEM( SS_TYPE_D_JUMP_DELAY, jump_delay, N_( "Jump Time" ) ),
    DI_ELEM( SS_TYPE_D_LAND_DELAY, land_delay, N_( "Landing Time" ) ),
@@ -128,14 +130,26 @@ static const ShipStatsLookup ss_lookup[] = {
             N_( "Stealth Discovered Speed" ) ),
    DI_ELEM( SS_TYPE_D_EW_SCANNED_TIME, ew_scanned_time, N_( "Scanned Speed" ) ),
 
+   D__ELEM( SS_TYPE_D_WEAPON_RANGE, weapon_range, N_( "Weapon Range" ) ),
+   D__ELEM( SS_TYPE_D_WEAPON_DAMAGE, weapon_damage, N_( "Weapon Damage" ) ),
+   D__ELEM( SS_TYPE_D_WEAPON_FIRERATE, weapon_firerate,
+            N_( "Weapon Fire Rate" ) ),
+   DI_ELEM( SS_TYPE_D_WEAPON_ENERGY, weapon_energy,
+            N_( "Weapon Energy Usage" ) ),
+
    D__ELEM( SS_TYPE_D_LAUNCH_RATE, launch_rate, N_( "Fire Rate (Launcher)" ) ),
    D__ELEM( SS_TYPE_D_LAUNCH_RANGE, launch_range, N_( "Launch Range" ) ),
    D__ELEM( SS_TYPE_D_LAUNCH_DAMAGE, launch_damage, N_( "Damage (Launcher)" ) ),
+   DI_ELEM( SS_TYPE_D_LAUNCH_ENERGY, launch_energy,
+            N_( "Energy Usage (Launcher)" ) ),
    D__ELEM( SS_TYPE_D_AMMO_CAPACITY, ammo_capacity, N_( "Ammo Capacity" ) ),
    DI_ELEM( SS_TYPE_D_LAUNCH_LOCKON, launch_lockon, N_( "Launch Lock-on" ) ),
    DI_ELEM( SS_TYPE_D_LAUNCH_CALIBRATION, launch_calibration,
             N_( "Launch Calibration" ) ),
    D__ELEM( SS_TYPE_D_LAUNCH_RELOAD, launch_reload, N_( "Ammo Reload Rate" ) ),
+   D__ELEM( SS_TYPE_D_LAUNCH_ACCEL, launch_accel, N_( "Ammo Accel" ) ),
+   D__ELEM( SS_TYPE_D_LAUNCH_SPEED, launch_speed, N_( "Ammo Speed" ) ),
+   D__ELEM( SS_TYPE_D_LAUNCH_TURN, launch_turn, N_( "Ammo Turn" ) ),
 
    D__ELEM( SS_TYPE_D_FBAY_DAMAGE, fbay_damage, N_( "Fighter Damage" ) ),
    D__ELEM( SS_TYPE_D_FBAY_HEALTH, fbay_health, N_( "Fighter Health" ) ),
@@ -153,6 +167,7 @@ static const ShipStatsLookup ss_lookup[] = {
             N_( "Energy Usage (Cannon)" ) ),
    D__ELEM( SS_TYPE_D_FORWARD_DAMAGE_AS_DISABLE, fwd_dam_as_dis,
             N_( "Damage as Disable (Cannon)" ) ),
+   D__ELEM( SS_TYPE_D_FORWARD_RANGE, fwd_range, N_( "Weapon Range (Cannon)" ) ),
 
    DI_ELEM( SS_TYPE_D_TURRET_HEAT, tur_heat, N_( "Heat (Turret)" ) ),
    D__ELEM( SS_TYPE_D_TURRET_DAMAGE, tur_damage, N_( "Damage (Turret)" ) ),
@@ -164,6 +179,7 @@ static const ShipStatsLookup ss_lookup[] = {
             N_( "Energy Usage (Turret)" ) ),
    D__ELEM( SS_TYPE_D_TURRET_DAMAGE_AS_DISABLE, tur_dam_as_dis,
             N_( "Damage as Disable (Turret)" ) ),
+   D__ELEM( SS_TYPE_D_TURRET_RANGE, tur_range, N_( "Weapon Range (Turret)" ) ),
 
    D__ELEM( SS_TYPE_D_HEAT_DISSIPATION, heat_dissipation,
             N_( "Heat Dissipation" ) ),
@@ -190,8 +206,6 @@ static const ShipStatsLookup ss_lookup[] = {
             _UNIT_POWER ),
    AI_ELEM( SS_TYPE_A_ENERGY_REGEN_MALUS, energy_regen_malus,
             N_( "Energy Usage" ), _UNIT_POWER ),
-   AI_ELEM( SS_TYPE_A_ENERGY_LOSS, energy_loss, N_( "Energy Usage" ),
-            _UNIT_POWER ),
    A__ELEM( SS_TYPE_A_SHIELD, shield, N_( "Shield Capacity" ), _UNIT_ENERGY ),
    A__ELEM( SS_TYPE_A_SHIELD_REGEN, shield_regen, N_( "Shield Regeneration" ),
             _UNIT_POWER ),
@@ -855,6 +869,8 @@ int ss_statsDesc( const ShipStats *s, char *buf, int len, int newline )
    double *dbl;
    int    *num;
 
+   if ( len > 0 )
+      buf[0] = '\0';
    l   = 0;
    ptr = (char *)s;
    for ( int i = 0; i < SS_TYPE_SENTINEL; i++ ) {

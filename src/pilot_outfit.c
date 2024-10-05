@@ -90,7 +90,7 @@ void pilot_lockUpdateSlot( Pilot *p, PilotOutfitSlot *o, Pilot *t, Target *wt,
           * This is meant as an incentive for the aggressor not to lose the
           * lock, and for the target to try and break the lock. */
          double old = o->u.ammo.lockon_timer;
-         /* Limit decay to the lockon time for this launcher. */
+         /* Limit decay to the lock-on time for this launcher. */
          max = o->outfit->u.lau.lockon;
          o->u.ammo.lockon_timer += dt;
          if ( ( old <= 0. ) && ( o->u.ammo.lockon_timer > 0. ) )
@@ -891,31 +891,51 @@ void pilot_fillAmmo( Pilot *pilot )
 
 double pilot_outfitRange( const Pilot *p, const Outfit *o )
 {
-   if ( outfit_isBolt( o ) )
-      return o->u.blt.falloff + ( o->u.blt.range - o->u.blt.falloff ) / 2.;
-   else if ( outfit_isBeam( o ) )
-      return o->u.bem.range;
-   else if ( outfit_isLauncher( o ) ) {
-      double duration = o->u.lau.duration;
-      if ( p != NULL )
-         duration *= p->stats.launch_range;
-      if ( o->u.lau.accel ) {
+   if ( outfit_isBolt( o ) ) {
+      double range =
+         o->u.blt.falloff + ( o->u.blt.range - o->u.blt.falloff ) / 2.;
+      if ( p != NULL ) {
+         if ( outfit_isTurret( o ) )
+            range *= p->stats.tur_range * p->stats.weapon_range;
+         else if ( outfit_isForward( o ) )
+            range *= p->stats.fwd_range * p->stats.weapon_range;
+      }
+      return range;
+   } else if ( outfit_isBeam( o ) ) {
+      double range = o->u.bem.range;
+      if ( p != NULL ) {
+         if ( outfit_isTurret( o ) )
+            range *= p->stats.tur_range * p->stats.weapon_range;
+         else if ( outfit_isForward( o ) )
+            range *= p->stats.fwd_range * p->stats.weapon_range;
+      }
+      return range;
+   } else if ( outfit_isLauncher( o ) ) {
+      double duration  = o->u.lau.duration;
+      double accel     = o->u.lau.accel;
+      double speed     = o->u.lau.speed;
+      double speed_max = o->u.lau.speed_max;
+      if ( p != NULL ) {
+         duration *= p->stats.launch_range * p->stats.weapon_range;
+         speed *= p->stats.launch_speed;
+         accel *= p->stats.launch_accel;
+         speed_max *= p->stats.launch_speed;
+      }
+      if ( o->u.lau.accel != 0. ) {
          double speedinc;
-         if ( o->u.lau.speed >
+         if ( speed >
               0. ) /* Ammo that don't start stopped don't have max speed. */
             speedinc = INFINITY;
          else
-            speedinc = o->u.lau.speed_max - o->u.lau.speed;
-         double at = speedinc / o->u.lau.accel;
+            speedinc = speed_max - speed;
+         double at = speedinc / accel;
          if ( at < duration )
-            return speedinc * ( duration - at / 2. ) +
-                   o->u.lau.speed * duration;
+            return speedinc * ( duration - at / 2. ) + speed * duration;
 
          /* Maximum speed will never be reached. */
-         return pow2( duration ) * o->u.lau.accel / 2. +
-                duration * o->u.lau.speed;
+         return pow2( duration ) * accel / 2. + duration * speed;
       }
-      return o->u.lau.speed * duration;
+      return speed * duration;
    } else if ( outfit_isFighterBay( o ) )
       return INFINITY;
    return -1.;
@@ -979,7 +999,7 @@ static void pilot_calcStatsSlot( Pilot *pilot, PilotOutfitSlot *slot )
       pilot_setFlag(
          pilot,
          PILOT_AFTERBURNER ); /* We use old school flags for this still... */
-      pilot->energy_loss +=
+      pilot->energy_regen -=
          pilot->afterburner->outfit->u.afb.energy; /* energy loss */
    } else {
       /* Always add stats for non mod/afterburners. */
@@ -1029,7 +1049,6 @@ void pilot_calcStats( Pilot *pilot )
    /* Energy. */
    pilot->energy_max   = pilot->ship->energy;
    pilot->energy_regen = pilot->ship->energy_regen;
-   pilot->energy_loss  = 0.; /* Initially no net loss. */
    /* Misc. */
    pilot->outfitlupdate = 0;
    /* Stats. */
@@ -1120,7 +1139,6 @@ void pilot_calcStats( Pilot *pilot )
    pilot->armour_regen -= s->armour_regen_malus;
    pilot->shield_regen -= s->shield_regen_malus;
    pilot->energy_regen -= s->energy_regen_malus;
-   pilot->energy_loss += s->energy_loss;
    pilot->dmg_absorb = CLAMP( 0., 1., pilot->dmg_absorb + s->absorb );
 
    /* Give the pilot his health proportion back */
@@ -1394,6 +1412,48 @@ const char *pilot_outfitSummary( const Pilot *p, const Outfit *o, int withname )
                    de );
    }
    return o_summary;
+}
+
+/**
+ * @brief Gets the speed of an outfit given a pilot.
+ */
+double pilot_outfitSpeed( const Pilot *p, const Outfit *o )
+{
+   if ( outfit_isBolt( o ) )
+      return o->u.blt.speed;
+   else if ( outfit_isLauncher( o ) ) {
+      double t;
+      double accel     = o->u.lau.accel;
+      double speed     = o->u.lau.speed;
+      double speed_max = o->u.lau.speed_max;
+      double duration  = o->u.lau.duration;
+      if ( p != NULL ) {
+         speed *= p->stats.launch_speed;
+         accel *= p->stats.launch_accel;
+         speed_max *= p->stats.launch_speed;
+         duration *= p->stats.launch_range * p->stats.weapon_range;
+      }
+
+      if ( o->u.lau.accel == 0. )
+         return speed;
+
+      if ( speed >
+           0. ) /* Ammo that don't start stopped don't have max speed. */
+         t = INFINITY;
+      else
+         t = ( speed_max - speed ) / accel; /* Time to reach max speed */
+
+      /* Reaches max speed. */
+      if ( t < duration )
+         return ( accel * t * t / 2. +
+                  ( speed_max - speed ) * ( duration - t ) ) /
+                   duration +
+                speed;
+      /* Doesn't reach max speed. */
+      else
+         return accel * duration / 2. + speed;
+   }
+   return -1.;
 }
 
 /**
@@ -1684,6 +1744,8 @@ int pilot_outfitLOntoggle( const Pilot *pilot, PilotOutfitSlot *po, int on )
 
    /* Handle return boolean. */
    ret = lua_toboolean( naevL, -1 );
+   if ( ret )
+      po->flags &= ~PILOTOUTFIT_ISON_LUA; /* Clear if it was set via toggle. */
    lua_pop( naevL, 1 );
    pilot_outfitLunmem( env, oldmem );
    return ret || pilotoutfit_modified; /* Even if the script says it didn't

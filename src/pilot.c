@@ -1245,7 +1245,7 @@ void pilot_distress( Pilot *p, Pilot *attacker, const char *msg )
             lua_rawgeti( naevL, LUA_REGISTRYINDEX, p->lua_mem ); /* m */
             lua_getfield( naevL, -1, "distress_hit" );           /* m, v */
             if ( lua_isnil( naevL, -1 ) )
-               hit = ( pow( p->base_mass, 0.2 ) - 1. );
+               hit = MAX( 0, pow( p->ship->points, 0.37 ) - 2 );
             else if ( lua_isnumber( naevL, -1 ) )
                hit = lua_tonumber( naevL, -1 );
             else {
@@ -1470,7 +1470,7 @@ double pilot_hit( Pilot *p, const Solid *w, const Pilot *pshooter,
 
       /* Increment shield timer or time before shield regeneration kicks in. */
       if ( reset ) {
-         p->stimer = 3.;
+         p->stimer = 5. * p->stats.shielddown_mod;
          p->sbonus = 3.;
       }
    }
@@ -1487,7 +1487,7 @@ double pilot_hit( Pilot *p, const Solid *w, const Pilot *pshooter,
 
       /* Increment shield timer or time before shield regeneration kicks in. */
       if ( reset ) {
-         p->stimer = 3.;
+         p->stimer = 5. * p->stats.shielddown_mod;
          p->sbonus = 3.;
       }
 
@@ -1621,7 +1621,7 @@ void pilot_updateDisable( Pilot *p, unsigned int shooter )
 
       /* Disabled ships don't use up presence. */
       if ( p->presence > 0 ) {
-         system_rmCurrentPresence( cur_system, p->faction, p->presence );
+         system_rmCurrentPresence( cur_system, p->faction_spawn, p->presence );
          p->presence = 0;
       }
 
@@ -2634,7 +2634,6 @@ void pilot_update( Pilot *pilot, double dt )
        * recharge at 30% of its normal rate.
        */
       pilot->energy += pilot->energy_regen * dt;
-      pilot->energy -= pilot->energy_loss * dt;
       if ( pilot->energy > pilot->energy_max )
          pilot->energy = pilot->energy_max;
       else if ( pilot->energy < 0. ) {
@@ -2843,7 +2842,7 @@ void pilot_sample_trails( Pilot *p, int none )
          mode = MODE_JUMPING;
       else if ( pilot_isFlag( p, PILOT_AFTERBURNER ) )
          mode = MODE_AFTERBURN;
-      else if ( p->engine_glow > 0. )
+      else if ( p->solid.accel > 0. )
          mode = MODE_GLOW;
       else
          mode = MODE_IDLE;
@@ -2852,15 +2851,15 @@ void pilot_sample_trails( Pilot *p, int none )
    use_3d = ship_isFlag( p->ship, SHIP_3DTRAILS );
    if ( use_3d ) {
       H = pilot_local_transform( p );
-   } else {
-      dircos = cos( p->solid.dir );
-      dirsin = sin( p->solid.dir );
    }
+
+   dircos = cos( p->solid.dir );
+   dirsin = sin( p->solid.dir );
 
    /* Compute the engine offset and decide where to draw the trail. */
    for ( int i = 0, g = 0; g < array_size( p->ship->trail_emitters ); g++ ) {
       const ShipTrailEmitter *trail = &p->ship->trail_emitters[g];
-      double                  dx, dy, dz, scale;
+      double                  dx, dy, dz, amod, ax, ay, scale;
 
       if ( !pilot_trail_generated( p, g ) )
          continue;
@@ -2905,9 +2904,14 @@ void pilot_sample_trails( Pilot *p, int none )
       dy *= scale;
       dz *= scale;
 
+      amod = p->solid.accel * p->engine_glow;
+      ax   = amod * -dircos;
+      ay   = amod * -dirsin;
+
       /* Sample. */
       spfx_trail_sample( p->trail[i++], p->solid.pos.x + dx,
-                         p->solid.pos.y + dy, dz, mode, mode == MODE_NONE );
+                         p->solid.pos.y + dy, dz, ax, ay, mode,
+                         mode == MODE_NONE );
    }
 }
 
@@ -2951,7 +2955,7 @@ void pilot_delete( Pilot *p )
 
    /* Remove faction if necessary. */
    if ( p->presence > 0 ) {
-      system_rmCurrentPresence( cur_system, p->faction, p->presence );
+      system_rmCurrentPresence( cur_system, p->faction_spawn, p->presence );
       p->presence = 0;
    }
 
@@ -3330,7 +3334,9 @@ static void pilot_init( Pilot *pilot, const Ship *ship, const char *name,
    pilot->name = strdup( ( name == NULL ) ? _( ship->name ) : name );
 
    /* faction */
-   pilot->faction = faction;
+   pilot->faction       = faction;
+   pilot->faction_spawn = faction; /* Just copy for now, but can be overwritten
+                                      by spawn scheduler. */
 
    /* solid */
    solid_init( &pilot->solid, ship->mass, dir, pos, vel, SOLID_UPDATE_RK4 );
@@ -3958,9 +3964,12 @@ void pilot_stackRemove( Pilot *p )
 {
    int i = pilot_getStackPos( p->id );
 #ifdef DEBUGGING
-   if ( i < 0 )
+   if ( i < 0 ) {
       WARN( _( "Trying to remove non-existent pilot '%s' from stack!" ),
             p->name );
+      p->id = 0;
+      return;
+   }
 #endif /* DEBUGGING */
    p->id = 0;
    array_erase( &pilot_stack, &pilot_stack[i], &pilot_stack[i + 1] );

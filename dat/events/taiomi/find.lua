@@ -47,7 +47,7 @@ function create ()
          local s = shiptype[ rnd.rnd(1,#shiptype) ]
          local d = pilot.add( s, "Derelict", p, p_("ship", "Derelict") )
          d:setInvincible(true)
-         d:disable()
+         d:setDisable()
          hook.pilot( d, "board", boardfunc )
          table.insert( derelicts, d )
       end
@@ -59,7 +59,7 @@ function create ()
    local pos = vec2.new( 12000, 4250 )
    derelict_mule = pilot.add( "Mule", "Derelict", pos, p_("ship", "Derelict") )
    derelict_mule:setInvincible(true)
-   derelict_mule:disable()
+   derelict_mule:setDisable()
 
    -- Drone
    pos = derelict_mule:pos() + vec2.newP( 30, rnd.angle() )
@@ -272,7 +272,7 @@ A---s--hm---t---
 
    vne.notebookEnd()
    vn.sfxEerie()
-   vn.na(_([[You tune your ship sensors to pick up the most miniscule of disturbances and focus on the area indicated by the notebook. You are about to give up when you detect an anomaly. It looks like you can use this to jump, but where could it lead?]]))
+   vn.na(_([[You tune your ship sensors to pick up the most minuscule of disturbances and focus on the area indicated by the notebook. You are about to give up when you detect an anomaly. It looks like you can use this to jump, but where could it lead?]]))
    vn.done()
    vn.run()
 end

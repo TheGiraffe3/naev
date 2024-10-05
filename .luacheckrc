@@ -116,8 +116,9 @@ stds.API_faction = {globals={
    "reputation_max", -- C functions: faction_reputationMax
    "friendly_at",
 }}
-stds.API_land = {globals={"land"}}      -- C function: spob_updateLand()
+stds.API_land = {globals={"land"}}      -- C function: spob_updateLand
 stds.API_rescue = {globals={"rescue"}}  -- C function: land_stranded
+stds.API_scan = {globals={"scan"}}      -- C function: player_scan
 stds.API_save_updater = {globals={
    "license",                           -- C function: player_tryAddLicense
    "outfit",                            -- C function: player_tryGetOutfit
@@ -226,6 +227,7 @@ stds.API_pilotoutfit = {globals={
    "mem", -- Automatically created using nlua_setenv().
 }}
 stds.API_pilotship = {globals={
+   "descextra",
    "update_dt",
    "init",
    "cleanup",
@@ -257,10 +259,11 @@ files["dat/missions/**/*.lua"].std = STANDARD .. "+API_misn+misn+hook+camera+tex
 files["dat/outfits/**/*.lua"].std = STANDARD .. GFX .. "+API_pilotoutfit+pilotoutfit+camera+munition" -- TODO doesn't really support the full API
 files["dat/ships/**/*.lua"].std = STANDARD .. GFX .. "+API_pilotship+camera" -- TODO doesn't really support the full API
 files["dat/rescue.lua"].std = STANDARD .. TK .. "+API_rescue"
+files["dat/scan.lua"].std = STANDARD .. TK .. "+API_scan"
 files["dat/rep.lua"].std = STANDARD .. TK .. "+tex+colour+bkg+cli+camera+music+linopt"
 files["dat/save_updater.lua"].std = "API_save_updater"
 files["dat/shipai.lua"].std = STANDARD .. TK .. "+API_shipai"
-files["dat/snd/music.lua"].std = STANDARD .. TK .. "+API_music+music"
+files["dat/snd/**/*.lua"].std = STANDARD .. TK .. "+API_music+music"
 files["dat/spob/**/*.lua"].std = STANDARD .. GFX .."+camera+API_spob"
 files["dat/effects/**/*.lua"].std = STANDARD .. "+API_effects"
 files["dat/naevpedia/**/*.lua"].std = STANDARD.. TK .. GFX

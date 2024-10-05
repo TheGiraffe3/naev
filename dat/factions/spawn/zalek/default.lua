@@ -1,12 +1,11 @@
 local scom = require "factions.spawn.lib.common"
+local var = require "shipvariants"
 
 --local sdronescout = ship.get("Za'lek Scout Drone")
 local sdronelight = ship.get("Za'lek Light Drone")
 local sdronebomber= ship.get("Za'lek Bomber Drone")
 local sdroneheavy = ship.get("Za'lek Heavy Drone")
-local ssting      = ship.get("Za'lek Sting")
 local sdemon      = ship.get("Za'lek Demon")
-local smephisto   = ship.get("Za'lek Mephisto")
 local sdiablo     = ship.get("Za'lek Diablo")
 local smammon     = ship.get("Za'lek Mammon")
 
@@ -19,15 +18,15 @@ local function spawn_patrol( pilots )
       { w=0.5, sdroneheavy, sdronelight },
       { w=0.7, sdronebomber, sdronelight, sdronelight },
       { w=0.8, sdroneheavy, sdronelight, sdronelight },
-      { ssting },
+      { var.zalek_sting },
    } )
 end
 
 -- @brief Spawns a medium sized squadron.
 local function spawn_squad ()
    local pilots = scom.doTable( { __doscans=(rnd.rnd() < 0.5) }, {
-      { w=0.5, ssting },
-      { w=0.8, ssting, sdroneheavy, sdroneheavy },
+      { w=0.5, var.zalek_sting },
+      { w=0.8, var.zalek_sting, sdroneheavy, sdroneheavy },
       { sdemon },
    } )
    return spawn_patrol( pilots ) -- MOAR DRONES
@@ -38,14 +37,14 @@ local function spawn_capship ()
    -- Generate the capship
    local pilots = scom.doTable( {}, {
       { w=0.1, smammon },
-      { w=0.55, smephisto },
+      { w=0.55, var.zalek_mephisto },
       { sdiablo },
    } )
 
    -- Generate the escorts
    return scom.doTable( pilots, {
       { w=0.5, sdroneheavy, sdroneheavy, sdronebomber, sdronelight, sdronelight, sdronelight },
-      { w=0.8, ssting, sdronebomber, sdronebomber },
+      { w=0.8, var.zalek_sting, sdronebomber, sdronebomber },
       { sdemon, sdroneheavy, sdronebomber, sdronelight, sdronelight },
    } )
 end

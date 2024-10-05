@@ -130,6 +130,7 @@ void pilot_weapSetPress( Pilot *p, int id, int type )
 void pilot_weapSetUpdateOutfitState( Pilot *p )
 {
    int non, noff;
+   int breakstealth;
 
    /* First pass to remove all dynamic flags. */
    for ( int i = 0; i < array_size( p->outfits ); i++ ) {
@@ -165,6 +166,7 @@ void pilot_weapSetUpdateOutfitState( Pilot *p )
    }
 
    /* Last pass figures out what to do. */
+   breakstealth = 0;
    non = noff           = 0;
    pilotoutfit_modified = 0;
    for ( int i = 0; i < array_size( p->outfits ); i++ ) {
@@ -180,8 +182,11 @@ void pilot_weapSetUpdateOutfitState( Pilot *p )
 
       /* Se whether to turn on or off. */
       if ( pos->flags & PILOTOUTFIT_ISON ) {
-         if ( pos->state == PILOT_OUTFIT_OFF )
+         if ( pos->state == PILOT_OUTFIT_OFF ) {
             non += pilot_outfitOn( p, pos );
+            if ( !outfit_isProp( pos->outfit, OUTFIT_PROP_STEALTH_ON ) )
+               breakstealth = 1;
+         }
       } else {
          if ( pos->state == PILOT_OUTFIT_ON )
             noff += pilot_outfitOff( p, pos );
@@ -191,7 +196,7 @@ void pilot_weapSetUpdateOutfitState( Pilot *p )
    /* Now update stats and shit as necessary. */
    if ( ( non + noff > 0 ) || pilotoutfit_modified ) {
       /* pilot_destealth should run calcStats already. */
-      if ( pilot_isFlag( p, PILOT_STEALTH ) && ( non > 0 ) )
+      if ( pilot_isFlag( p, PILOT_STEALTH ) && breakstealth )
          pilot_destealth( p );
       else
          pilot_calcStats( p );
@@ -205,13 +210,14 @@ void pilot_weapSetUpdateOutfitState( Pilot *p )
  */
 void pilot_weapSetUpdate( Pilot *p )
 {
-   int    n, nweap, target_set;
+   int    n, nweap, target_set, breakstealth;
    double time;
    Target wt;
 
    if ( pilot_isFlag( p, PILOT_HYP_BEGIN ) )
       return;
 
+   breakstealth         = 0;
    n                    = 0;
    nweap                = 0;
    target_set           = 0;
@@ -280,7 +286,9 @@ void pilot_weapSetUpdate( Pilot *p )
        * XXX for simplicity we are using pilot position / velocity instead of
        * mount point, which might be a bit off. */
       if ( ( pos->flags & PILOTOUTFIT_INRANGE ) && !outfit_isFighterBay( o ) &&
-           ( ( outfit_duration( o ) * p->stats.launch_range < time ) ||
+           ( ( outfit_duration( o ) * p->stats.launch_range *
+                  p->stats.weapon_range <
+               time ) ||
              ( !weapon_inArc( o, p, &wt, &p->solid.pos, &p->solid.vel,
                               p->solid.dir, time ) ) ) )
          continue;
@@ -293,12 +301,15 @@ void pilot_weapSetUpdate( Pilot *p )
          nweap += pilot_shootWeaponSetOutfit(
             p, o, &wt, time, !( pos->flags & PILOTOUTFIT_MANUAL ) );
       n++;
+
+      if ( !outfit_isProp( pos->outfit, OUTFIT_PROP_STEALTH_ON ) )
+         breakstealth = 1;
    }
 
    /* Now update stats and shit as necessary. */
    if ( ( n > 0 ) || pilotoutfit_modified ) {
       /* pilot_destealth should run calcStats already. */
-      if ( pilot_isFlag( p, PILOT_STEALTH ) && ( n > 0 ) )
+      if ( pilot_isFlag( p, PILOT_STEALTH ) && breakstealth )
          pilot_destealth( p );
       else
          pilot_calcStats( p );
@@ -955,6 +966,8 @@ double pilot_weapFlyTime( const Outfit *o, const Pilot *parent, const vec2 *pos,
                  VY( parent->solid.vel ) - vel->y );
 
    speed = outfit_speed( o );
+   if ( outfit_isLauncher( o ) )
+      speed *= parent->stats.launch_speed;
 
    /* Get the vector : shooter -> target */
    vec2_cset( &relative_location, pos->x - VX( parent->solid.pos ),
@@ -1292,19 +1305,22 @@ void pilot_getRateMod( double *rate_mod, double *energy_mod, const Pilot *p,
    switch ( o->type ) {
    case OUTFIT_TYPE_BOLT:
    case OUTFIT_TYPE_BEAM:
-      *rate_mod   = 1. / p->stats.fwd_firerate; /* Invert. */
-      *energy_mod = p->stats.fwd_energy;
+      *rate_mod   = 1. / ( p->stats.fwd_firerate *
+                         p->stats.weapon_firerate ); /* Invert. */
+      *energy_mod = p->stats.fwd_energy * p->stats.weapon_energy;
       break;
    case OUTFIT_TYPE_TURRET_BOLT:
    case OUTFIT_TYPE_TURRET_BEAM:
-      *rate_mod   = 1. / p->stats.tur_firerate; /* Invert. */
-      *energy_mod = p->stats.tur_energy;
+      *rate_mod   = 1. / ( p->stats.tur_firerate *
+                         p->stats.weapon_firerate ); /* Invert. */
+      *energy_mod = p->stats.tur_energy * p->stats.weapon_energy;
       break;
 
    case OUTFIT_TYPE_LAUNCHER:
    case OUTFIT_TYPE_TURRET_LAUNCHER:
-      *rate_mod   = 1. / p->stats.launch_rate;
-      *energy_mod = 1.;
+      *rate_mod =
+         1. / ( p->stats.launch_rate * p->stats.weapon_firerate ); /* Invert. */
+      *energy_mod = p->stats.launch_energy * p->stats.weapon_energy;
       break;
 
    case OUTFIT_TYPE_FIGHTER_BAY:
@@ -1598,6 +1614,28 @@ int pilot_outfitOffAll( Pilot *p )
 }
 
 /**
+ * @brief Disables all active outfits for a pilot.
+ *
+ * @param p Pilot whose outfits we are disabling.
+ * @return Whether any outfits were actually disabled.
+ */
+int pilot_outfitOffAllStealth( Pilot *p )
+{
+   int nchg = 0;
+   for ( int i = 0; i < array_size( p->outfits ); i++ ) {
+      PilotOutfitSlot *o = p->outfits[i];
+      /* Picky about our outfits. */
+      if ( o->outfit == NULL )
+         continue;
+      if ( outfit_isProp( o->outfit, OUTFIT_PROP_STEALTH_ON ) )
+         continue;
+      if ( o->state == PILOT_OUTFIT_ON )
+         nchg += pilot_outfitOff( p, o );
+   }
+   return ( nchg > 0 );
+}
+
+/**
  * @brief Activate the afterburner.
  */
 void pilot_afterburn( Pilot *p )
@@ -1638,8 +1676,9 @@ void pilot_afterburn( Pilot *p )
       p->afterburner->state  = PILOT_OUTFIT_ON;
       p->afterburner->stimer = outfit_duration( p->afterburner->outfit );
       pilot_setFlag( p, PILOT_AFTERBURNER );
+      if ( !outfit_isProp( p->afterburner->outfit, OUTFIT_PROP_STEALTH_ON ) )
+         pilot_destealth( p ); /* No afterburning stealth. */
       pilot_calcStats( p );
-      pilot_destealth( p ); /* No afterburning stealth. */
 
       /* @todo Make this part of a more dynamic activated outfit sound system.
        */

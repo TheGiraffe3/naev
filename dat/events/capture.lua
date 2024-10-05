@@ -10,13 +10,14 @@
 --]]
 local fmt = require 'format'
 local vn = require 'vn'
+local ccomm = require "common.comm"
 
 local plt
 local function setup_pilot( p )
    plt = p
    local pp = player.pilot()
    plt:setLeader( pp )
-   plt:changeAI( "follow" )
+   plt:changeAI( "capture" )
    plt:rename( mem.name )
    plt:setNoClear()
    plt:setFriendly(true)
@@ -28,13 +29,25 @@ local function setup_pilot( p )
       plt:outfitAddIntrinsic( v )
    end
    plt:weapsetCleanup() -- Hopefully won't do anything now
+
+   -- Set hooks
+   hook.pilot( plt, "death", "plt_death" )
+   hook.pilot( plt, "hail", "plt_hail" )
 end
 
 function create ()
    local nc = naev.cache()
    plt = nc.capture_pilot.pilot
    mem.cost = nc.capture_pilot.cost
+   mem.costnaked = nc.capture_pilot.costnaked
+   mem.outfitsnaked = nc.capture_pilot.outfitsnaked
    nc.capture_pilot = nil
+
+   -- Original data
+   mem.o = {
+      faction = plt:faction(),
+      name = plt:name(),
+   }
 
    mem.name = fmt.f(_("Captured {shp}"), {shp=plt:ship():name()} )
    mem.ship = plt:ship()
@@ -45,8 +58,6 @@ function create ()
    local a,s = plt:health()
    plt:setHealth( a, s ) -- Clears disabled state
 
-   hook.pilot( plt, "death", "plt_death" )
-   hook.pilot( plt, "hail", "plt_hail" )
    hook.land( "land" )
    hook.jumpout( "jumpout" )
    hook.enter( "enter" )
@@ -61,12 +72,54 @@ function plt_death ()
 end
 
 function plt_hail ()
+   local abandon = false
+   player.commClose()
+
+   vn.reset()
+   vn.scene()
+   ccomm.newCharacter( vn, plt )
+   vn.transition()
+
+   vn.label("menu")
+   vn.na(_([[What do you wish to do with your captured ship?]]))
+   vn.menu{
+      {_([[Abandon.]]), "abandon"},
+      {_([[Close.]]), "close"},
+   }
+
+   vn.label("abandon")
+   vn.na(_([[Are you sure you wish to abandon this captured ship? #rThis is irreversible.#0]]))
+   vn.menu{
+      {_([[Cancel.]]), "menu"},
+      {_([[Abandon the ship.]]), "abandon_yes"},
+   }
+
+   vn.label("abandon_yes")
+   vn.label(fmt.f(_([[You abandon the {ship}.]]),
+      {ship=plt}))
+   vn.func( function () abandon = true end )
+   vn.done()
+
+   vn.label("close")
+   vn.run()
+
+   -- Ship is abandoned
+   if abandon then
+      plt:setDisable()
+      plt:setNoBoard(true)
+      plt:setLeader()
+      plt:setFaction( mem.o.faction )
+      plt:rename( mem.o.name )
+      plt:setFriendly(false)
+      evt.finish(false)
+   end
 end
 
 function land ()
    local cur = spob.cur()
    if cur:services()['refuel'] then
       local abandon = false
+      local naked = false
 
       -- Success!
       vn.clear()
@@ -77,6 +130,7 @@ function land ()
          {spb=spob.cur()}))
       vn.menu{
          {fmt.f(_([[Repair the {shp} for {amount}]]),{shp=mem.ship, amount=fmt.credits(mem.cost)}), "repair"},
+         {fmt.f(_([[Repair the {shp} for {amount} (without outfits)]]),{shp=mem.ship, amount=fmt.credits(mem.costnaked)}), "repair_naked"},
          {fmt.f(_([[Abandon the {shp}]]),{shp=mem.ship}), "abandon"},
       }
 
@@ -92,6 +146,20 @@ function land ()
       vn.func( function () abandon = true end )
       vn.done()
 
+      vn.label("repair_naked")
+      vn.func( function ()
+         if player.credits() < mem.costnaked then
+            vn.jump("broke")
+            return
+         end
+         naked = true
+         player.pay( -mem.costnaked )
+      end )
+      vn.sfxMoney()
+      vn.na(fmt.f(_([[You pay {amt} to repair the {shp} to be good as new, minus the outfits.]]),
+         {shp=mem.ship, amt=fmt.credits(mem.costnaked)}))
+      vn.done()
+
       vn.label("repair")
       vn.func( function ()
          if player.credits() < mem.cost then
@@ -103,6 +171,7 @@ function land ()
       vn.sfxMoney()
       vn.na(fmt.f(_([[You pay {amt} to repair the {shp} to be good as new.]]),
          {shp=mem.ship, amt=fmt.credits(mem.cost)}))
+      vn.done()
 
       vn.run()
 
@@ -114,7 +183,11 @@ function land ()
       local newname = player.shipAdd( mem.ship, mem.name, fmt.f(_("You captured this ship in the {sys} system."), {sys=mem.system}) )
       local name = player.pilot():name()
       player.shipSwap( newname, true )
-      player.pilot():outfitsEquip( mem.outfits )
+      if naked then
+         player.pilot():outfitsEquip( mem.outfitsnaked )
+      else
+         player.pilot():outfitsEquip( mem.outfits )
+      end
       player.shipSwap( name, true )
       evt.finish(true)
    end

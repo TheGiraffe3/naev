@@ -36,6 +36,7 @@ typedef enum ShipStatsType_ {
    SS_TYPE_D_ENERGY_REGEN_MOD, /**< Energy regeneration multiplier. */
    SS_TYPE_D_CPU_MOD,          /**< CPU multiplier. */
    SS_TYPE_D_COOLDOWN_MOD,     /**< Ability cooldown multiplier. */
+   SS_TYPE_D_SHIELDDOWN_MOD,   /**< Time that shields are down. */
 
    /* Freighter-type. */
    SS_TYPE_D_JUMP_DELAY, /**< Modulates the time that passes during a hyperspace
@@ -59,14 +60,24 @@ typedef enum ShipStatsType_ {
    SS_TYPE_D_EW_SCANNED_TIME,  /**< Electronic warfare time it takes to get
                                   scanned. */
 
+   /* Weapons. */
+   SS_TYPE_D_WEAPON_RANGE,    /**< Weapon range. */
+   SS_TYPE_D_WEAPON_DAMAGE,   /**< Weapon damage. */
+   SS_TYPE_D_WEAPON_FIRERATE, /**< Weapon fire rate. */
+   SS_TYPE_D_WEAPON_ENERGY,   /**< Weapon energy usage. */
+
    /* Launchers. */
    SS_TYPE_D_LAUNCH_RATE,        /**< Launch rate for missiles. */
    SS_TYPE_D_LAUNCH_RANGE,       /**< Launch range for missiles. */
    SS_TYPE_D_LAUNCH_DAMAGE,      /**< Launch damage for missiles. */
+   SS_TYPE_D_LAUNCH_ENERGY,      /**< Launch energy for missiles. */
    SS_TYPE_D_AMMO_CAPACITY,      /**< Capacity of launchers. */
    SS_TYPE_D_LAUNCH_LOCKON,      /**< Lock-on speed of launchers. */
    SS_TYPE_D_LAUNCH_CALIBRATION, /**< Calibration speed of launchers. */
    SS_TYPE_D_LAUNCH_RELOAD,      /**< Regeneration rate of launcher ammo. */
+   SS_TYPE_D_LAUNCH_ACCEL,       /**< Launched ammo accel. */
+   SS_TYPE_D_LAUNCH_SPEED,       /**< Launched ammo speed. */
+   SS_TYPE_D_LAUNCH_TURN,        /**< Launched ammo turn. */
 
    /* Fighter Bays. */
    SS_TYPE_D_FBAY_DAMAGE,   /**< Fighter bay fighter damage bonus (all weapons).
@@ -85,6 +96,7 @@ typedef enum ShipStatsType_ {
    SS_TYPE_D_FORWARD_FIRERATE,          /**< Firerate of cannons. */
    SS_TYPE_D_FORWARD_ENERGY,            /**< Energy usage of cannons. */
    SS_TYPE_D_FORWARD_DAMAGE_AS_DISABLE, /**< Damage converted to disable. */
+   SS_TYPE_D_FORWARD_RANGE,             /**< Weapon range. */
 
    /* Turrets. */
    SS_TYPE_D_TURRET_HEAT,              /**< Heat generation for turrets. */
@@ -93,6 +105,7 @@ typedef enum ShipStatsType_ {
    SS_TYPE_D_TURRET_FIRERATE,          /**< Firerate of turrets. */
    SS_TYPE_D_TURRET_ENERGY,            /**< Energy usage of turrets. */
    SS_TYPE_D_TURRET_DAMAGE_AS_DISABLE, /**< Damage converted to disable. */
+   SS_TYPE_D_TURRET_RANGE,             /**< Weapon range. */
 
    /* Misc. */
    SS_TYPE_D_HEAT_DISSIPATION,   /**< Ship heat dissipation. */
@@ -121,9 +134,7 @@ typedef enum ShipStatsType_ {
    SS_TYPE_A_ENERGY_REGEN,       /**< Energy regeneration modifier. */
    SS_TYPE_A_ENERGY_REGEN_MALUS, /**< Flat energy regeneration modifier (not
                                     multiplied). */
-   SS_TYPE_A_ENERGY_LOSS, /**< Flat energy modifier (not multiplied) and applied
-                             linearly. */
-   SS_TYPE_A_SHIELD,      /**< Shield modifier. */
+   SS_TYPE_A_SHIELD,             /**< Shield modifier. */
    SS_TYPE_A_SHIELD_REGEN,       /**< Shield regeneration modifier. */
    SS_TYPE_A_SHIELD_REGEN_MALUS, /**< Flat shield regeneration modifier (not
                                     multiplied). */
@@ -230,7 +241,6 @@ typedef struct ShipStats_ {
    double energy_mod;         /**< Energy multiplier. */
    double energy_regen_mod;   /**< Energy regeneration multiplier. */
    double energy_regen_malus; /**< Energy usage (flat). */
-   double energy_loss;        /**< Energy modifier (flat and linear). */
    double shield;             /**< Shield modifier. */
    double shield_regen;       /**< Shield regeneration modifier. */
    double shield_mod;         /**< Shield multiplier. */
@@ -252,6 +262,7 @@ typedef struct ShipStats_ {
    double cpu_max;        /**< CPU modifier. */
    double absorb;         /**< Flat damage absorption. */
    double cooldown_mod;   /**< Ability cooldown mod. */
+   double shielddown_mod; /**< Time shields are down. */
 
    /* Freighter-type. */
    double jump_delay;    /**< Modulates the time that passes during a hyperspace
@@ -276,14 +287,24 @@ typedef struct ShipStats_ {
    double crew_mod;           /**< Relative crew modification. */
    double mass_mod;           /**< Relative mass modification. */
 
+   /* Weapons. */
+   double weapon_range;    /**< Weapon range. */
+   double weapon_damage;   /**< Weapon damage. */
+   double weapon_firerate; /**< Weapon firerate. */
+   double weapon_energy;   /**< Weapon energy usage. */
+
    /* Launchers. */
    double launch_rate;        /**< Fire rate of launchers. */
    double launch_range;       /**< Range of launchers. */
    double launch_damage;      /**< Damage of launchers. */
+   double launch_energy;      /**< Energy usage of launchers. */
    double ammo_capacity;      /**< Capacity of launchers. */
    double launch_lockon;      /**< Lock on speed of launchers. */
    double launch_calibration; /**< Calibration speed of launchers. */
    double launch_reload;      /**< Reload rate of launchers. */
+   double launch_accel /**< Missile accel. */;
+   double launch_speed; /**< Missile speed. */
+   double launch_turn;  /**< Missile turn. */
 
    /* Fighter bays. */
    double fbay_damage;   /**< Fighter bay fighter damage (all weapons). */
@@ -300,6 +321,7 @@ typedef struct ShipStats_ {
    double fwd_firerate;   /**< Rate of fire of forward mounts. */
    double fwd_energy;     /**< Consumption rate of forward mounts. */
    double fwd_dam_as_dis; /**< Damage as disable for forward mounts. */
+   double fwd_range;      /**< Range of forward mounts. */
 
    /* Destroyer/Cruiser type. */
    double tur_heat;       /**< Heat of turrets. */
@@ -308,6 +330,7 @@ typedef struct ShipStats_ {
    double tur_firerate;   /**< Rate of fire of turrets. */
    double tur_energy;     /**< Consumption rate of turrets. */
    double tur_dam_as_dis; /**< Damage as disable for turrets. */
+   double tur_range;      /**< Range of forward mounts. */
 
    /* Jamming. */
    double jam_chance; /**< Jamming chance. */

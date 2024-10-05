@@ -7,6 +7,7 @@ local fmt = require 'format'
 local der = require "common.derelict"
 
 local board_lootOne -- forward-declared function, defined at bottom of file
+local board_fcthit_check
 local loot_mod
 local special_col = {0.7, 0.45, 0.22} -- Dark Gold
 local board_close
@@ -296,7 +297,8 @@ end
 local board_wdw
 local board_wgt
 local board_plt
-local board_freespace
+local board_fcthit
+local board_freespace, board_fcthit_txt
 local function board_updateFreespace ()
    board_freespace:set( fmt.f(_("You have {freespace} of free space."),{freespace=fmt.tonnes(player.pilot():cargoFree())}) )
 end
@@ -308,17 +310,28 @@ local function board_lootSel ()
          table.insert( sel, w )
       end
    end
-   for _k,w in ipairs(sel) do
-      board_lootOne( w, #sel>1 )
+
+   if #sel == 0 then
+      return
+   elseif #sel == 1 then
+      board_lootOne( sel[1] )
+   else
+      board_fcthit_check( function ()
+         for _k,w in ipairs(sel) do
+            board_lootOne( w, #sel>1 )
+         end
+      end )
    end
 end
 
 local function board_lootAll ()
-   for _k,w in ipairs(board_wgt) do
-      if not w.loot or not w.loot.price or w.loot.price <= 0 then
-         board_lootOne( w, true )
+   board_fcthit_check( function ()
+      for _k,w in ipairs(board_wgt) do
+         if not w.loot or not w.loot.price or w.loot.price <= 0 then
+            board_lootOne( w, true )
+         end
       end
-   end
+   end )
 end
 
 local function can_capture ()
@@ -339,13 +352,19 @@ local function is_capturable ()
    if t.noplayer then
       return false, _("This ship is not capturable.")
    end
+   if board_plt:flags("carried") then
+      return false, _("You can not capture deployed fighters.")
+   end
    local pm = board_plt:memory()
    if not pm.natural then
       return false, _("This ship is not capturable.")
    end
+   if board_plt:flags("carried") then
+      return false, _("You can not capture deployed fighters.")
+   end
    local flttot, fltcur = player.fleetCapacity()
    if flttot-fltcur < board_plt:points() then
-      return false, fmt.f(_("You do not have enough fleet capacity to capture the ship. You need {needed}, but only have {have}."),
+      return false, fmt.f(_("You do not have enough free fleet capacity to capture the ship. You need {needed}, but only have {have} free fleet capacity."),
          {needed=board_plt:points(), have=flttot-fltcur})
    end
    return true
@@ -364,8 +383,18 @@ local function board_capture ()
    local pps = pp:stats()
    -- TODO should this be affected by loot_mod and how?
    --local loot_mod = pp:shipstat("loot_mod", true)
-   local bonus = (10+ps.crew) / (10+pps.crew)
-   local cost = board_plt:worth() * bonus
+   local bonus = (10+ps.crew) / (10+pps.crew) + 0.25
+   local cost = board_plt:worth()
+   local costnaked = cost
+   cost = cost * bonus
+   local outfitsnaked = board_plt:outfits(nil,true) -- Get non-locked
+   for k,v in ipairs(outfitsnaked) do
+      if v then
+         outfitsnaked[k] = nil
+         costnaked = costnaked - v:price()
+      end
+   end
+   costnaked = math.min( cost, costnaked * bonus * 1.1 ) -- Always a bit more expensive, but never more than base
    local sbonus
    if bonus > 1 then
       sbonus = string.format("#r%+d", bonus*100 - 100)
@@ -374,11 +403,10 @@ local function board_capture ()
    end
 
    local fct = board_plt:faction()
-   local fcthit = board_plt:points() / 2
+   local fcthit = board_plt:points() / 2 + board_fcthit -- So looting is always applied
    local factionmsg = ""
-   local pf = board_plt:faction()
-   if not (pf:static() or pf:invisible()) then
-      factionmsg = fmt.f(_(" Capturing the ship will lower your reputation with {fct} by {amount} (current standing is {current}."),
+   if not (fct:static() or fct:invisible()) then
+      factionmsg = fmt.f(_(" Capturing the ship will lower your reputation with {fct} by {amount} (current standing is {current})."),
          {fct=fct, amount=fcthit, current=fct:playerStanding()})
       if fct:playerStanding()-fcthit < 0 then
          factionmsg = fmt.f(_([[{msg} This action will make you hostile with {fct}!]]),
@@ -387,11 +415,12 @@ local function board_capture ()
       factionmsg = "#r"..factionmsg.."#0"
    end
 
-   local capturemsg = fmt.f(_([[Do you wish to capture the {shpname}? You estimate it will cost #r{credits} ({sbonus}%#r from crew strength)#0 in repairs to successfully restore the ship. You have {playercreds}.{fctmsg}
+   local capturemsg = fmt.f(_([[Do you wish to capture the {shpname}? You estimate it will cost #o{credits}#0 ({sbonus}% from crew strength) in repairs to successfully restore the ship with outfits, and #o{creditsnaked}#0 without outfits. You have {playercreds}.{fctmsg}
 
 You will still have to escort the ship and land with it to perform the repairs and complete the capture. The ship will not assist you in combat and will be lost if destroyed.]]),
       {shpname=board_plt:name(),
        credits=fmt.credits(cost),
+       creditsnaked=fmt.credits(costnaked),
        playercreds=fmt.credits(player.credits()),
        fctmsg=factionmsg,
        sbonus=sbonus})
@@ -407,7 +436,12 @@ You will still have to escort the ship and land with it to perform the repairs a
 
          -- Start capture script
          local nc = naev.cache()
-         nc.capture_pilot = { pilot=board_plt, cost=cost }
+         nc.capture_pilot = {
+            pilot=board_plt,
+            cost=cost,
+            costnaked=costnaked,
+            outfitsnaked=outfitsnaked,
+         }
          naev.eventStart("Ship Capture")
          board_close()
       end )
@@ -527,7 +561,9 @@ local function manage_cargo ()
 end
 
 function board_close ()
-   luatk.close()
+   if board_wdw then
+      board_wdw:destroy()
+   end
    board_wdw = nil
    der.sfx.unboard:play()
 end
@@ -549,13 +585,19 @@ function board( plt )
       board_wdw:destroy()
    end
 
-   local font = lg.newFont(naev.conf().font_size_def)
-   font:setOutline(1)
-   luatk.setDefaultFont( font )
+   local fct = board_plt:faction()
+   local pm = board_plt:memory()
+   board_fcthit = pm.distress_hit or (math.pow(board_plt:points(), 0.37)-2)
+   board_fcthit = math.max( 0, board_fcthit )
+   -- TODO see if nobody notices
+   if fct:static() or fct:invisible() then
+      board_fcthit = 0
+   end
 
-   local w, h = 570,310
+   local w, h = 570,350
    local wdw = luatk.newWindow( nil, nil, w, h )
    board_wdw = wdw
+   luatk.newText( wdw, 0, 10, w, 20, fmt.f(_("Boarding {plt}"), {plt=plt}), nil, "center" )
 
    local x = w-20-80
    luatk.newButton( wdw, x, h-20-30, 80, 30, _("Close"), board_close )
@@ -578,18 +620,32 @@ function board( plt )
       --x = x-100
    end
 
+   -- Display about faction hits
+   local fctmsg
+   if board_fcthit > 0 then
+      fctmsg = fmt.f(_("Looting anything from the ship will lower your reputation with {fct} by {fcthit}."),
+            {fct=fct,fcthit=fmt.number(board_fcthit)})
+   else
+      fctmsg = _("Looting anything from the ship may anger nearby ships.")
+   end
+   board_fcthit_txt = luatk.newText( wdw, 20, 40, w-40, 20, fctmsg )
+   local fh = board_fcthit_txt:height()
+   local dfh = luatk._deffont:getLineHeight()
+   if fh > dfh then
+      h = h + fh-(30-dfh)
+      wdw:resize( w, h )
+   end
+
    -- Add manage cargo button if applicable
-   cargo_btn = luatk.newButton( wdw, w-20-120, 25, 120, 30, _("Manage Cargo"), manage_cargo )
+   cargo_btn = luatk.newButton( wdw, w-20-120, 70, 120, 30, _("Manage Cargo"), manage_cargo )
    if #player.fleetCargoList() <= 0 then
       cargo_btn:disable()
       cargo_btn:setAlt(_("You have no cargo to manage."))
    end
-
-   luatk.newText( wdw, 0, 10, w, 20, fmt.f(_("Boarding {plt}"), {plt=plt}), nil, "center" )
-   board_freespace = luatk.newText( wdw, 20, 40, w-40, 20, "" )
+   board_freespace = luatk.newText( wdw, 20, 80, w-40, 20, "" )
    board_updateFreespace()
 
-   local y = 70
+   local y = 115
    local b = 80
    local m = 10
    local nrows = 2
@@ -611,11 +667,63 @@ function board( plt )
    luatk.run()
 end
 
+function board_fcthit_check( func )
+   local fct = board_plt:faction()
+   local std = fct:playerStanding()
+   if (std>=0) and (std-board_fcthit<0) then
+      local msg = fmt.f(_("Looting anything from the ship will lower your reputation with {fct} by {amount} (current standing is {current}). #rThis action will make you hostile with {fct}!#0"),
+         {fct=fct, amount=fct.number(board_fcthit), current=fct:playerStanding()})
+      luatk.yesno(fmt.f(_([[Offend {fct}?]]),{fct=fct}), msg, function ()
+         func()
+      end )
+   else
+      func()
+   end
+end
+
+local function board_fcthit_apply ()
+   -- Piss off nearby ships
+   board_plt:distress( player.pilot() )
+
+   if board_fcthit <= 0 then
+      return
+   end
+   local fct = board_plt:faction()
+   local std = fct:playerStanding()
+   fct:modPlayer( -board_fcthit )
+   local loss = std - fct:playerStanding()
+   board_fcthit = 0
+   if loss <= 0 then
+      -- No loss actually happened
+      return
+   end
+
+   local msg = fmt.f(_("You have lost {fcthit} reputation with {fct} for looting this ship!"),
+      {fcthit=fmt.number(board_fcthit),fct=board_plt:faction()})
+   player.msg( "#r"..msg.."#0" )
+   board_fcthit_txt:set( msg )
+end
+
+-- Frontend to do checks when looting
+local board_lootOneDo
 function board_lootOne( wgt, nomsg )
+   local l = wgt.loot
+   if not l then return end
+
+   if nomsg then
+      board_lootOneDo( wgt, nomsg )
+   else
+      board_fcthit_check( function ()
+         board_lootOneDo( wgt, nomsg )
+      end )
+   end
+end
+-- Helper function that actually loots
+function board_lootOneDo( wgt, nomsg )
    local looted = false
    local clear = false
    local l = wgt.loot
-   if not l then return end
+
    -- Moolah
    if l.type=="credits" then
       board_plt:credits( -l.q ) -- Will go negative with loot_mod
@@ -623,6 +731,7 @@ function board_lootOne( wgt, nomsg )
       looted = true
       clear = true
       player.msg(fmt.f(_("You looted {creds} from {plt}."),{creds=fmt.credits(l.q), plt=board_plt}))
+      board_fcthit_apply()
    elseif l.type=="fuel" then
       local pp = player.pilot()
       local ps = pp:stats()
@@ -645,6 +754,7 @@ function board_lootOne( wgt, nomsg )
       if l.q <= 0 then
          clear = true
       end
+      board_fcthit_apply()
    elseif l.type=="outfit" then
       local o = l.data
       if l.price and l.price > 0 then
@@ -665,17 +775,19 @@ function board_lootOne( wgt, nomsg )
             player.msg(fmt.f(_("You looted a {outfit} from {plt}."),{outfit=o, plt=board_plt}))
             wgt.selected = false
             wgt.loot = nil
+            board_fcthit_apply()
          end )
          return false
       end
       if board_plt:outfitRm( o ) ~= 1 then
          -- Soft warning
-	 print(fmt.f(_("Board script failed to remove '{outfit}' from boarded pilot '{plt}'!"),{outfit=o, plt=board_plt}))
+         print(fmt.f(_("Board script failed to remove '{outfit}' from boarded pilot '{plt}'!"),{outfit=o, plt=board_plt}))
       end
       player.outfitAdd( o )
       looted = true
       clear = true
       player.msg(fmt.f(_("You looted a {outfit} from {plt}."),{outfit=o, plt=board_plt}))
+      board_fcthit_apply()
    elseif l.type=="cargo" then
       local c = l.data
       local cf = player.fleetCargoFree()
@@ -691,6 +803,7 @@ function board_lootOne( wgt, nomsg )
       player.fleetCargoAdd( c, q ) -- We just use the original bonus computed with loot_mod
       player.msg(fmt.f(_("You looted {amount} of {cargo} from {plt}."),{amount=fmt.tonnes(q), cargo=c, plt=board_plt}))
       board_updateFreespace()
+      board_fcthit_apply()
       looted = true
 
       -- Looted all the cargo

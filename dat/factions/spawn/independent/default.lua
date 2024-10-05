@@ -1,22 +1,15 @@
 local scom = require "factions.spawn.lib.common"
+local var = require "shipvariants"
 
-local sschroedinger= ship.get("Schroedinger")
-local sllama      = ship.get("Llama")
-local sgawain     = ship.get("Gawain")
-local skoala      = ship.get("Koala")
 local shyena      = ship.get("Hyena")
-local sshark      = ship.get("Shark")
-local sancestor   = ship.get("Ancestor")
 local stristan    = ship.get("Tristan")
 local slancelot   = ship.get("Lancelot")
 local svendetta   = ship.get("Vendetta")
 local sphalanx    = ship.get("Phalanx")
 local sadmonisher = ship.get("Admonisher")
-local sstarbridge = ship.get("Starbridge")
 local svigilance  = ship.get("Vigilance")
 local sbedivere   = ship.get("Bedivere")
 local spacifier   = ship.get("Pacifier")
-local skestrel    = ship.get("Kestrel")
 local shawking    = ship.get("Hawking")
 local sgoddard    = ship.get("Goddard")
 
@@ -32,9 +25,9 @@ end
 local function spawn_advert ()
    local pilots = {}
    local civships = {
-      sschroedinger,
-      sllama,
-      sgawain,
+      var.schroedinger,
+      var.llama,
+      var.gawain,
       shyena,
    }
    local shp = civships[ rnd.rnd(1, #civships) ]
@@ -46,11 +39,13 @@ end
 -- @brief Spawns a small patrol fleet.
 local function spawn_solitary_civilians ()
    return scom.doTable( {}, {
-      { w=0.3, sllama },
-      { w=0.55, shyena },
-      { w=0.75, sgawain },
-      { w=0.9, sschroedinger },
-      { skoala },
+      { w=0.25, var.llama },
+      { w=0.45, shyena },
+      { w=0.6,  var.quicksilver },
+      { w=0.75, var.koala },
+      { w=0.85, var.mule },
+      { w=0.9,  var.gawain },
+      { var.schroedinger },
    } )
 end
 
@@ -65,10 +60,10 @@ end
 local function spawn_bounty_hunter_sml ()
    local ships = {
          shyena,
-         sshark,
+         var.shark,
          slancelot,
          svendetta,
-         sancestor,
+         var.ancestor,
       }
    if frontier then
       table.insert( ships, stristan )
@@ -79,7 +74,7 @@ local function spawn_bounty_hunter_med ()
    local ships = {
       sadmonisher,
       sphalanx,
-      sstarbridge,
+      var.starbridge,
       svigilance,
       spacifier,
    }
@@ -90,7 +85,7 @@ local function spawn_bounty_hunter_med ()
 end
 local function spawn_bounty_hunter_lrg ()
    return spawn_bounty_hunter{
-      skestrel,
+      var.kestrel,
       shawking,
       sgoddard,
    }

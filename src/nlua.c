@@ -18,6 +18,7 @@
 #include "array.h"
 #include "cmark_wrap.h"
 #include "conf.h"
+#include "console.h"
 #include "debug.h"
 #include "log.h"
 #include "lua_enet.h"
@@ -78,6 +79,8 @@ static lua_State *nlua_newState( void ); /* creates a new state */
 static int        nlua_loadBasic( lua_State *L );
 static int        luaB_loadstring( lua_State *L );
 static int        lua_cache_cmp( const void *p1, const void *p2 );
+static int        nlua_errTraceInternal( lua_State *L, int idx );
+
 /* gettext */
 static int            nlua_gettext( lua_State *L );
 static int            nlua_ngettext( lua_State *L );
@@ -245,6 +248,21 @@ void lua_exit( void )
    naevL = NULL;
 }
 
+int nlua_warn( lua_State *L, int idx )
+{
+   const char *msg = luaL_checkstring( L, idx );
+#if DEBUGGING
+   nlua_errTraceInternal( L, idx );
+   DEBUG( "%s", lua_tostring( L, -1 ) );
+   cli_printCoreString( lua_tostring( L, -1 ), 1 );
+   lua_pop( L, 1 );
+#endif /* DEBUGGING */
+   WARN( "%s", msg );
+   /* Add to console. */
+   cli_printCoreString( msg, 1 );
+   return 0;
+}
+
 /**
  * @brief Clears the cached stuff.
  */
@@ -334,7 +352,7 @@ void nlua_pushEnvTable( lua_State *L )
 {
    lua_rawgeti( L, LUA_REGISTRYINDEX, nlua_envs );
 }
-#endif /* DEBBUGING */
+#endif /* DEBUGGING */
 
 /*
  * @brief Create an new environment in global Lua state.
@@ -437,7 +455,7 @@ nlua_env nlua_newEnv( const char *name )
 /*
  * @brief Frees an environment created with nlua_newEnv()
  *
- *    @param env Enviornment to free.
+ *    @param env Environment to free.
  */
 void nlua_freeEnv( nlua_env env )
 {
@@ -468,7 +486,7 @@ void nlua_pushenv( lua_State *L, nlua_env env )
 }
 
 /*
- * @brief Gets variable from enviornment and pushes it to stack
+ * @brief Gets variable from environment and pushes it to stack
  *
  * This is meant to replace lua_getglobal()
  *
@@ -930,8 +948,13 @@ int nlua_loadStandard( nlua_env env )
  */
 int nlua_errTrace( lua_State *L )
 {
+   return nlua_errTraceInternal( L, 1 );
+}
+
+static int nlua_errTraceInternal( lua_State *L, int idx )
+{
    /* Handle special done case. */
-   const char *str = luaL_checkstring( L, 1 );
+   const char *str = luaL_checkstring( L, idx );
    if ( strcmp( str, NLUA_DONE ) == 0 )
       return 1;
 
@@ -956,7 +979,7 @@ int nlua_errTrace( lua_State *L )
 }
 
 /*
- * @brief Wrapper around lua_pcall() that handles errors and enviornments
+ * @brief Wrapper around lua_pcall() that handles errors and environments
  *
  *    @param env Environment.
  *    @param nargs Number of arguments to pass.

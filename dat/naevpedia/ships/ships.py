@@ -28,7 +28,7 @@ tags_recursive( root, d, '' )
 
 outstr = f"""---
 title: "{d['name']}"
-cond: "return ship.get([[{d['name']}]]):known()"
+cond: "return ship.get([[{d['name']}]]):known() and not ship.get([[{d['name']}]]):tags().nonaevpedia"
 ---
 <% s = ship.get([[{d['name']}]]) %>
 """
@@ -60,7 +60,7 @@ end
 
 ## Properties
 
-* **[Class](mechanics/class)**:   <%= _(s:classDisplay()) %>
+* **[Class](ships/classes)**:   <%= _(s:classDisplay()) %>
 * **Fabricator**:   <%= _(s:fabricator()) %>
 * **[Crew](mechanics/boarding)**:   <%= fmt.number(s:crew()) %>
 <% if naev.player.fleetCapacity() > 0 then %>
@@ -68,8 +68,8 @@ end
 <% end %>
 * **[Mass](mechanics/movement)**:   <%= fmt.f(_("{mass} {unit}"), {mass=fmt.number(s:mass()),unit=naev.unit('mass')}) %>
 * **[Base Armour](mechanics/damage)**:   <%= fmt.f(_("{armour} {unit}"), {armour=fmt.number(s:armour()), unit=naev.unit('energy')}) %>
-* **[Cargo Space](mechanics/cargo)**:   <%= fmt.f(_("{cargo} {unit}"), {cargo=fmt.number(s:cargo()), unit=naev.unit('energy')})%>
-* **[Fuel Consumption](mechanics/hyperspace)**:   <%= fmt.f(_("{fuel} {unit}"), {fuel=fmt.number(s:fuelConsumption()), unit=naev.unit('energy')})%>
+* **[Cargo Space](mechanics/cargo)**:   <%= fmt.f(_("{cargo} {unit}"), {cargo=fmt.number(s:cargo()), unit=naev.unit('mass')})%>
+* **[Fuel Consumption](mechanics/hyperspace)**:   <%= fmt.f(_("{fuel} {unit}"), {fuel=fmt.number(s:fuelConsumption()), unit=naev.unit('unit')})%>
 * **[Price](mechanics/credits)**:   <%= fmt.credits(s:price()) %>
 <% if s:license() then %>
 * **License**:   <%= _(s:license()) %>
@@ -115,5 +115,5 @@ You are not aware of anywhere where the <%= s:name() %> is available for purchas
 <% end %>
 """
 
-with open( args.o, 'w' ) as f:
-    f.write( outstr )
+with open(args.o, 'w', encoding='utf-8') as f:
+    f.write(outstr)

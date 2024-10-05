@@ -1,19 +1,12 @@
 local scom = require "factions.spawn.lib.common"
-
-local sllama      = ship.get("Llama")
-local sgawain     = ship.get("Gawain")
-local skoala      = ship.get("Koala")
-local squicksilver= ship.get("Quicksilver")
-local smule       = ship.get("Mule")
-local srhino      = ship.get("Rhino")
---local sshark      = ship.get("Shark")
+local var = require "shipvariants"
 
 -- @brief Spawns a small trade fleet.
 local function spawn_patrol ()
    return scom.doTable( {}, {
-      { w=0.5, sllama },
-      { w=0.8, sllama, sllama },
-      { skoala, sllama },
+      { w=0.5, var.llama },
+      { w=0.8, var.llama, var.llama },
+      { var.koala, var.llama },
    } )
 end
 
@@ -21,20 +14,20 @@ end
 local function spawn_squad ()
    if rnd.rnd() < 0.5 then
       return scom.doTable( {}, {
-         { w=0.5, skoala, sllama, sllama },
-         { skoala, sgawain, sgawain },
+         { w=0.5, var.koala, var.llama, var.llama },
+         { var.koala, var.gawain, var.gawain },
       } )
    else
       local pilots = {}
       if rnd.rnd() < 0.7 then
-         scom.addPilot( pilots, smule )
+         scom.addPilot( pilots, var.mule )
       else
-         scom.addPilot( pilots, srhino )
+         scom.addPilot( pilots, var.rhino )
       end
       return scom.doTable( {}, {
-         { w=0.4, sllama, sllama },
-         { w=0.7, skoala, skoala },
-         { squicksilver, squicksilver },
+         { w=0.4, var.llama, var.llama },
+         { w=0.7, var.koala, var.koala },
+         { var.quicksilver, var.quicksilver },
       } )
    end
 end

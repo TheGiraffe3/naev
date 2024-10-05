@@ -20,6 +20,7 @@
 #include "ndata.h"
 #include "nxml.h"
 #include "outfit.h"
+#include "rng.h"
 #include "ship.h"
 
 #define XML_TECH_ID "Techs" /**< Tech xml document tag. */
@@ -40,7 +41,8 @@ typedef enum tech_item_type_e {
  * @brief Item contained in a tech group.
  */
 typedef struct tech_item_s {
-   tech_item_type_t type; /**< Type of data. */
+   tech_item_type_t type;   /**< Type of data. */
+   double           chance; /**< For probalistic versions. */
    union {
       void         *ptr; /**< Pointer when needing to do indifferent voodoo. */
       const Outfit *outfit;       /**< Outfit pointer. */
@@ -77,13 +79,16 @@ static tech_item_t *tech_itemGrow( tech_group_t *grp );
 static int          tech_parseFile( tech_group_t *tech, const char *file );
 static int          tech_parseFileData( tech_group_t *tech );
 static int          tech_parseXMLData( tech_group_t *tech, xmlNodePtr parent );
-static int          tech_addItemOutfit( tech_group_t *grp, const char *name );
-static int          tech_addItemShip( tech_group_t *grp, const char *name );
-static int tech_addItemCommodity( tech_group_t *grp, const char *name );
-static int tech_getID( const char *name );
-static int tech_addItemGroupPointer( tech_group_t       *grp,
-                                     const tech_group_t *ptr );
-static int tech_addItemGroup( tech_group_t *grp, const char *name );
+static tech_item_t *tech_addItemOutfit( tech_group_t *grp, const char *name );
+static tech_item_t *tech_addItemShip( tech_group_t *grp, const char *name );
+static tech_item_t *tech_addItemCommodity( tech_group_t *grp,
+                                           const char   *name );
+static tech_item_t *tech_addItemTechInternal( tech_group_t *tech,
+                                              const char   *value );
+static int          tech_getID( const char *name );
+static int          tech_addItemGroupPointer( tech_group_t       *grp,
+                                              const tech_group_t *ptr );
+static tech_item_t *tech_addItemGroup( tech_group_t *grp, const char *name );
 /* Getting by tech. */
 static void **tech_addGroupItem( void **items, tech_item_type_t type,
                                  const tech_group_t *tech );
@@ -293,7 +298,8 @@ static int tech_parseXMLData( tech_group_t *tech, xmlNodePtr parent )
    do {
       xml_onlyNodes( node );
       if ( xml_isNode( node, "item" ) ) {
-         char *buf, *name;
+         char        *buf, *name;
+         tech_item_t *itm;
 
          /* Must have name. */
          name = xml_get( node );
@@ -306,35 +312,27 @@ static int tech_parseXMLData( tech_group_t *tech, xmlNodePtr parent )
          /* Try to find hard-coded type. */
          xmlr_attr_strd( node, "type", buf );
          if ( buf == NULL ) {
-            int ret = 1;
-            // if (ret)
-            ret = tech_addItemGroup( tech, name );
-            if ( ret )
-               ret = tech_addItemOutfit( tech, name );
-            if ( ret )
-               ret = tech_addItemShip( tech, name );
-            if ( ret )
-               ret = tech_addItemCommodity( tech, name );
-            if ( ret )
-               WARN( _( "Generic item '%s' not found in tech group '%s'" ),
-                     name, tech->name );
+            itm = tech_addItemTechInternal( tech, name );
          } else if ( strcmp( buf, "group" ) == 0 ) {
-            if ( !tech_addItemGroup( tech, name ) )
-               WARN( _( "Group item '%s' not found in tech group '%s'." ), name,
-                     tech->name );
+            itm = tech_addItemGroup( tech, name );
+            WARN( _( "Group item '%s' not found in tech group '%s'." ), name,
+                  tech->name );
          } else if ( strcmp( buf, "outfit" ) == 0 ) {
-            if ( !tech_addItemGroup( tech, name ) )
-               WARN( _( "Outfit item '%s' not found in tech group '%s'." ),
-                     name, tech->name );
+            itm = tech_addItemOutfit( tech, name );
+            WARN( _( "Outfit item '%s' not found in tech group '%s'." ), name,
+                  tech->name );
          } else if ( strcmp( buf, "ship" ) == 0 ) {
-            if ( !tech_addItemGroup( tech, name ) )
-               WARN( _( "Ship item '%s' not found in tech group '%s'." ), name,
-                     tech->name );
+            itm = tech_addItemShip( tech, name );
+            WARN( _( "Ship item '%s' not found in tech group '%s'." ), name,
+                  tech->name );
          } else if ( strcmp( buf, "commodity" ) == 0 ) {
-            if ( !tech_addItemGroup( tech, name ) )
+            itm = tech_addItemCommodity( tech, name );
+            if ( itm == NULL )
                WARN( _( "Commodity item '%s' not found in tech group '%s'." ),
                      name, tech->name );
-         }
+         } else
+            itm = NULL;
+         xmlr_attr_float_def( node, "chance", itm->chance, -1. );
          free( buf );
          continue;
       }
@@ -380,7 +378,7 @@ static tech_item_t *tech_itemGrow( tech_group_t *grp )
    return &array_grow( &grp->items );
 }
 
-static int tech_addItemOutfit( tech_group_t *grp, const char *name )
+static tech_item_t *tech_addItemOutfit( tech_group_t *grp, const char *name )
 {
    tech_item_t  *item;
    const Outfit *o;
@@ -388,21 +386,19 @@ static int tech_addItemOutfit( tech_group_t *grp, const char *name )
    /* Get the outfit. */
    o = outfit_getW( name );
    if ( o == NULL )
-      return 1;
+      return NULL;
 
    /* Load the new item. */
    item           = tech_itemGrow( grp );
    item->type     = TECH_TYPE_OUTFIT;
    item->u.outfit = o;
-   return 0;
+   return item;
 }
 
 /**
  * @brief Loads a group item pertaining to a outfit.
- *
- *    @return 0 on success.
  */
-static int tech_addItemShip( tech_group_t *grp, const char *name )
+static tech_item_t *tech_addItemShip( tech_group_t *grp, const char *name )
 {
    tech_item_t *item;
    const Ship  *s;
@@ -410,21 +406,19 @@ static int tech_addItemShip( tech_group_t *grp, const char *name )
    /* Get the outfit. */
    s = ship_getW( name );
    if ( s == NULL )
-      return 1;
+      return NULL;
 
    /* Load the new item. */
    item         = tech_itemGrow( grp );
    item->type   = TECH_TYPE_SHIP;
    item->u.ship = s;
-   return 0;
+   return item;
 }
 
 /**
  * @brief Loads a group item pertaining to a outfit.
- *
- *    @return 0 on success.
  */
-static int tech_addItemCommodity( tech_group_t *grp, const char *name )
+static tech_item_t *tech_addItemCommodity( tech_group_t *grp, const char *name )
 {
    tech_item_t *item;
    Commodity   *c;
@@ -432,13 +426,13 @@ static int tech_addItemCommodity( tech_group_t *grp, const char *name )
    /* Get the outfit. */
    c = commodity_getW( name );
    if ( c == NULL )
-      return 1;
+      return NULL;
 
    /* Load the new item. */
    item         = tech_itemGrow( grp );
    item->type   = TECH_TYPE_COMMODITY;
    item->u.comm = c;
-   return 0;
+   return item;
 }
 
 /**
@@ -446,8 +440,9 @@ static int tech_addItemCommodity( tech_group_t *grp, const char *name )
  */
 int tech_addItem( const char *name, const char *value )
 {
-   int           id, ret;
+   int           id;
    tech_group_t *tech;
+   tech_item_t  *ret;
 
    /* Get ID. */
    id = tech_getID( name );
@@ -462,13 +457,13 @@ int tech_addItem( const char *name, const char *value )
 
    /* Try to add the tech. */
    ret = tech_addItemGroup( tech, value );
-   if ( ret )
+   if ( ret == NULL )
       ret = tech_addItemOutfit( tech, value );
-   if ( ret )
+   if ( ret == NULL )
       ret = tech_addItemShip( tech, value );
-   if ( ret )
+   if ( ret == NULL )
       ret = tech_addItemCommodity( tech, value );
-   if ( ret ) {
+   if ( ret == NULL ) {
       WARN( _( "Generic item '%s' not found in tech group '%s'" ), value,
             name );
       return -1;
@@ -482,19 +477,25 @@ int tech_addItem( const char *name, const char *value )
  */
 int tech_addItemTech( tech_group_t *tech, const char *value )
 {
+   return ( tech_addItemTechInternal( tech, value ) != NULL );
+}
+
+static tech_item_t *tech_addItemTechInternal( tech_group_t *tech,
+                                              const char   *value )
+{
    /* Try to add the tech. */
-   int ret = tech_addItemGroup( tech, value );
-   if ( ret )
+   tech_item_t *ret = tech_addItemGroup( tech, value );
+   if ( ret == NULL )
       ret = tech_addItemOutfit( tech, value );
-   if ( ret )
+   if ( ret == NULL )
       ret = tech_addItemShip( tech, value );
-   if ( ret )
+   if ( ret == NULL )
       ret = tech_addItemCommodity( tech, value );
-   if ( ret ) {
+   if ( ret == NULL ) {
       WARN( _( "Generic item '%s' not found in tech group" ), value );
-      return -1;
+      return NULL;
    }
-   return 0;
+   return ret;
 }
 
 /**
@@ -577,10 +578,8 @@ static int tech_addItemGroupPointer( tech_group_t       *grp,
 
 /**
  * @brief Loads a group item pertaining to a group.
- *
- *    @return 0 on success.
  */
-static int tech_addItemGroup( tech_group_t *grp, const char *name )
+static tech_item_t *tech_addItemGroup( tech_group_t *grp, const char *name )
 {
    tech_item_t *item;
    int          tech;
@@ -588,13 +587,13 @@ static int tech_addItemGroup( tech_group_t *grp, const char *name )
    /* Try to find the tech. */
    tech = tech_getID( name );
    if ( tech < 0 )
-      return 1;
+      return NULL;
 
    /* Load the new item. */
    item        = tech_itemGrow( grp );
    item->type  = TECH_TYPE_GROUP;
    item->u.grp = tech;
-   return 0;
+   return item;
 }
 
 /**
@@ -625,12 +624,12 @@ static void **tech_addGroupItem( void **items, tech_item_type_t type,
    /* Set up. */
    int size = array_size( tech->items );
 
-   /* Load commodities first, then we handle groups. */
+   /* Handle specified type. */
    for ( int i = 0; i < size; i++ ) {
       int          f;
       tech_item_t *item = &tech->items[i];
 
-      /* Only handle commodities for now. */
+      /* Only care about type. */
       if ( item->type != type )
          continue;
 
@@ -643,6 +642,10 @@ static void **tech_addGroupItem( void **items, tech_item_type_t type,
          }
       }
       if ( f == 1 )
+         continue;
+
+      /* Check chance. */
+      if ( ( item->chance > 0. ) && ( RNGF() < item->chance ) )
          continue;
 
       /* Add. */

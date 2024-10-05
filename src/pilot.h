@@ -265,8 +265,9 @@ typedef struct Pilot_ {
    double       r;    /**< Pilot's randomness value in [0,1] range. */
 
    /* Fleet/faction management. */
-   int faction;  /**< Pilot's faction. */
-   int presence; /**< Presence being used by the pilot. */
+   int faction;       /**< Pilot's faction. */
+   int faction_spawn; /**< Faction used to spawn the pilot. */
+   int presence;      /**< Presence being used by the pilot. */
 
    /* Object characteristics */
    const Ship  *ship;        /**< ship pilot is flying */
@@ -312,8 +313,6 @@ typedef struct Pilot_ {
    double energy;       /**< Current energy. */
    double energy_max;   /**< Maximum energy. */
    double energy_regen; /**< Energy regeneration rate (per second). */
-   double energy_loss;  /**< Linear loss that bypasses the actual RC circuit
-                           stuff. */
 
    /* Defensive Electronic Warfare. */
    double

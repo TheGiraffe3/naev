@@ -69,6 +69,10 @@ int nlua_loadCol( nlua_env env )
  * col2:setHSV( col1:hsv() ) -- Set colour 2 with colour 1's HSV values
  * @endcode
  *
+ * Colours are assumed to be given as gamma-corrected values and are stored
+ * internally in linear colourspace by default. Most functions have a boolean
+ * parameter that allows controlling this behaviour.
+ *
  * @luamod colour
  */
 /**
@@ -169,7 +173,8 @@ static int colL_tostring( lua_State *L )
 }
 
 /**
- * @brief Gets a colour.
+ * @brief Creates a new colour. Colours are assumed to be in gamma colourspace
+ * by default and are converted to linear unless specified.
  *
  * @usage colour.new( "Red" ) -- Gets colour by name
  * @usage colour.new( "Red", 0.5 ) -- Gets colour by name with alpha 0.5
@@ -182,6 +187,8 @@ static int colL_tostring( lua_State *L )
  *    @luatparam number g Green value of the colour.
  *    @luatparam number b Blue value of the colour.
  *    @luatparam[opt=1.] number a Alpha value of the colour.
+ *    @luatparam[opt=false] gamma Whether to load the colour in the gamma
+ * colourspace.
  *    @luatreturn Colour A newly created colour.
  * @luafunc new
  */
@@ -192,16 +199,27 @@ static int colL_new( lua_State *L )
    if ( lua_gettop( L ) == 0 ) {
       col.r = col.g = col.b = col.a = 1.;
    } else if ( lua_isnumber( L, 1 ) ) {
-      col.r = gammaToLinear( luaL_checknumber( L, 1 ) );
-      col.g = gammaToLinear( luaL_checknumber( L, 2 ) );
-      col.b = gammaToLinear( luaL_checknumber( L, 3 ) );
+      if ( lua_toboolean( L, 5 ) ) {
+         col.r = luaL_checknumber( L, 1 );
+         col.g = luaL_checknumber( L, 2 );
+         col.b = luaL_checknumber( L, 3 );
+      } else {
+         col.r = gammaToLinear( luaL_checknumber( L, 1 ) );
+         col.g = gammaToLinear( luaL_checknumber( L, 2 ) );
+         col.b = gammaToLinear( luaL_checknumber( L, 3 ) );
+      }
       col.a = luaL_optnumber( L, 4, 1. );
    } else if ( lua_isstring( L, 1 ) ) {
       const glColour *col2 = col_fromName( lua_tostring( L, 1 ) );
       if ( col2 == NULL )
          return NLUA_ERROR( L, _( "Colour '%s' does not exist!" ),
                             lua_tostring( L, 1 ) );
-      col   = *col2;
+      if ( lua_toboolean( L, 3 ) ) {
+         col.r = linearToGamma( col2->r );
+         col.g = linearToGamma( col2->g );
+         col.b = linearToGamma( col2->b );
+      } else
+         col = *col2;
       col.a = luaL_optnumber( L, 2, 1. );
    } else if ( lua_iscolour( L, 1 ) )
       col = *lua_tocolour( L, 1 );
@@ -239,7 +257,7 @@ static int colL_alpha( lua_State *L )
  *
  *    @luatparam Colour col Colour to get RGB values of.
  *    @luatparam[opt=false] boolean gamma Whether or not to get the
- * gamma-corrected value or not.
+ * gamma-corrected value or not. Defaults to internal value that is linear.
  *    @luatreturn number The red value of the colour.
  *    @luatreturn number The green value of the colour.
  *    @luatreturn number The blue value of the colour.

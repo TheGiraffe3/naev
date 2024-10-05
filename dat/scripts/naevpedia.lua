@@ -7,6 +7,17 @@ local fmt = require "format"
 local utf8 = require "utf8"
 
 local naevpedia = {}
+local nc = naev.cache()
+
+function naevpedia.get( title )
+   for k,e in pairs( nc._naevpedia ) do
+      local name = e.title or e.name
+      if name==title then
+         return k
+      end
+   end
+   return nil
+end
 
 function utf8.replace( s, old, new )
    local search_start_idx = 1
@@ -58,7 +69,10 @@ end
 local function lua_unescape( str, tbl, env )
    for k,v in ipairs(tbl) do
       local sout
-      local c, cerror = loadstring( "return "..v )
+      if not utf8.find( v, "return ", 1, true ) then
+         v = "return "..v
+      end
+      local c, cerror = loadstring( v )
       if not c then
          warn( cerror )
          sout = "#r" .. c .. "#0"
@@ -113,7 +127,6 @@ local function extractmetadata( entry, s )
 end
 
 -- Load into the cache to avoid having to slurp all the files all the time
-local nc = naev.cache()
 function naevpedia.load()
    local mds = {}
    local function find_md( dir )
@@ -250,6 +263,7 @@ local function loaddoc( filename )
    meta._G.pairs = pairs
    meta._G.table = table
    meta._G.inlist = inlist
+   meta._G.naevpedia = naevpedia
 
    -- Translate line by line
    -- TODO ignore <% %> blocks like the python script does.
@@ -372,6 +386,13 @@ function naevpedia.setup( name )
             return false
          end
          if na.parent ~= nb.parent then
+            if na.parent~=nil and nb.parent~=nil then
+               return npsort( na.parent, nb.parent )
+            elseif na.parent~=nil then
+               return npsort( na.parent, b )
+            elseif nb.parent~=nil then
+               return npsort( a, nb.parent )
+            end
             return a < b
          end
          -- Sort by priority

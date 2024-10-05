@@ -11,6 +11,9 @@ local utf8 = require 'utf8'
 local vn = require "vn"
 local fmt = require "format"
 
+local deffont = lg.newFont( naev.conf().font_size_def )
+deffont:setOutline(1)
+
 local luatk = {
    _windows = {},
    _canvas = nil,
@@ -49,7 +52,7 @@ local luatk = {
          text     = { 0.2,  0.8,  0.1  },
       },
    },
-   _deffont = nil,
+   _deffont = deffont,
 }
 
 --[[--
@@ -221,6 +224,11 @@ Only to be used when running the toolkit outside of luatk.run.
    @tparam number dt Number of seconds since last update.
 --]]
 function luatk.update(dt)
+   -- Close if all windows are destroyed
+   if #luatk._windows<=0 then
+      luatk.close()
+      return
+   end
    for _k,wdw in ipairs(luatk._windows) do
       wdw:update(dt)
    end
@@ -427,14 +435,34 @@ Creates a new window.
 --]]
 function luatk.newWindow( x, y, w, h )
    local nw, nh = naev.gfx.dim()
+   local cx, cy = x==nil, y==nil
    x = x or ((nw-w)/2)
    y = y or ((nh-h)/2)
    local wdw = { x=x, y=y, w=w, h=h, _widgets={} }
    setmetatable( wdw, Window_mt )
    table.insert( luatk._windows, wdw )
    wdw.type = "window"
+   wdw.centerx = cx
+   wdw.centery = cy
    luatk._dirty = true
    return wdw
+end
+--[[--
+Resizes the window, recentering if necessary.
+
+   @tparam number w Width to set the window to.
+   @tparam number h Height to set the window to.
+--]]
+function luatk.Window:resize( w, h )
+   local nw, nh = naev.gfx.dim()
+   self.w = w
+   self.h = h
+   if self.centerx then
+      self.x = (nw-w)/2
+   end
+   if self.centery then
+      self.y = (nh-h)/2
+   end
 end
 function luatk.Window:draw()
    local x, y, w, h = self.x, self.y, self.w, self.h
@@ -1164,6 +1192,14 @@ function luatk.newList( parent, x, y, w, h, items, onselect, defitem )
       wgt.scrollh = wgt.maxh - wgt.h
    end
    wgt:cleanpos()
+
+   -- Chop text if necessary
+   wgt.itemsfit = {}
+   for k,v in ipairs( wgt.items ) do
+      local _maxw, wrapped = font:getWrap( v, w-4 )
+      wgt.itemsfit[k] = wrapped[1]
+   end
+
    return wgt
 end
 function luatk.List:draw( bx, by )
@@ -1197,7 +1233,7 @@ function luatk.List:draw( bx, by )
    local yoff = y+4-self.pos
    local woff = w-4
    local hlim = by+self.y+self.h
-   for k,v in ipairs( self.items ) do
+   for k,v in ipairs( self.itemsfit ) do
       if yoff > -self.cellh then
          lg.setColour( luatk.colour.text )
          lg.printf( v, font, xoff, yoff, woff )

@@ -85,7 +85,6 @@ static const luaL_Reg cli_methods[] = {
 static int  cli_keyhandler( unsigned int wid, SDL_Keycode key, SDL_Keymod mod,
                             int isrepeat );
 static void cli_render( double bx, double by, double w, double h, void *data );
-static void cli_printCoreString( const char *s, int escape );
 static int  cli_printCore( lua_State *L, int cli_only, int escape );
 static void cli_addMessage( const char *msg );
 static void cli_addMessageMax( const char *msg, const int l );
@@ -109,7 +108,7 @@ static char *cli_escapeString( int *len_out, const char *s, int len )
 /**
  * @brief Prints a string.
  */
-static void cli_printCoreString( const char *s, int escape )
+void cli_printCoreString( const char *s, int escape )
 {
    int                 len;
    glPrintLineIterator iter;
@@ -131,32 +130,34 @@ static void cli_printCoreString( const char *s, int escape )
  */
 static int cli_printCore( lua_State *L, int cli_only, int escape )
 {
-   int n = lua_gettop( L ); /* Number of arguments. */
-
-   lua_getglobal( L, "tostring" );
+   int n = lua_gettop( L );        /* Number of arguments. */
+   lua_getglobal( L, "tostring" ); /* f */
+   lua_pushstring( L, "" );        /* f, s */
    for ( int i = 1; i <= n; i++ ) {
       const char *s;
-      lua_pushvalue( L, -1 ); /* function to be called */
-      lua_pushvalue( L, i );  /* value to print */
-      if ( lua_pcall( L, 1, 1, 0 ) != 0 ) {
+      lua_pushvalue( L, -2 );               /* f, s, f */
+      lua_pushvalue( L, i );                /* f, s, f, v */
+      if ( lua_pcall( L, 1, 1, 0 ) != 0 ) { /* f, s, r */
          WARN( _( "Error calling 'tostring':\n%s" ), lua_tostring( L, -1 ) );
          lua_pop( L, 1 );
          continue;
       }
-      s = lua_tostring( L, -1 ); /* get result */
+      s = lua_tostring( L, -1 );
       if ( s == NULL )
          return NLUA_ERROR(
             L, LUA_QL( "tostring" ) " must return a string to " LUA_QL(
                   "print" ) );
-      if ( !cli_only )
-         LOG( "%s", s );
 
-      /* Add to console. */
-      cli_printCoreString( s, escape );
-
-      lua_pop( L, 1 ); /* pop result */
+      lua_pushstring( L, "\t" ); /* f, s, '\t' */
+      lua_concat( L, 3 );        /* f, s */
    }
 
+   const char *s = lua_tostring( L, -1 );
+   if ( !cli_only )
+      LOG( "%s", s );
+   cli_printCoreString( s, escape );
+
+   lua_pop( L, 2 ); /* */
    return 0;
 }
 
@@ -168,17 +169,7 @@ static int cli_printCore( lua_State *L, int cli_only, int escape )
  */
 int cli_warn( lua_State *L )
 {
-   const char *msg = luaL_checkstring( L, 1 );
-#if DEBUGGING
-   nlua_errTrace( L );
-   DEBUG( "%s", lua_tostring( L, -1 ) );
-   cli_printCoreString( lua_tostring( L, -1 ), 1 );
-   lua_pop( L, 1 );
-#endif /* DEBUGGING */
-   WARN( "%s", msg );
-   /* Add to console. */
-   cli_printCoreString( msg, 1 );
-   return 0;
+   return nlua_warn( L, 1 );
 }
 
 /**
