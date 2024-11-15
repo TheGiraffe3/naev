@@ -24,6 +24,5 @@ jobs:
       with:
 #        builtin: clear,en-GB_to_en-OED,en-US_to_en-OED
 #        path: dat/
-        skip: *.lua
-        exclude_file: .codespell.exclude
+        exclude_file: .codespell.exclude,*.lua
         ignore_words_file: .codespell.words.exclude
