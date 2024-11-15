@@ -2,3 +2,4 @@
 "What the hell are you guys doing loafing around? We have work to do! I don't pay you to sit on your bums all day!"]]))
    txtsuccess = _([[Dvaered High Command commends you for your efforts to recover your relationship with House Dvaered, and have cleared your previous offense record with the House.]]),
    rebina(fmt.f(_([["You know what to do," Rebina tells you. "You will find Jorek in the spaceport bar on {pnt}. When you see him, tell him you've come to 'see to his special needs'. Oh, and please be discreet. Don't talk about things you don't need to; the walls have ears in that place. In particular, don't mention any names."]]),
+         if p:flags("hilight") then
