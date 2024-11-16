@@ -23,5 +23,5 @@ jobs:
     - uses: codespell-project/actions-codespell@master
       with:
         path: dat/missions/, dat/events
-        exclude_file: .codespell.exclude
+#        exclude_file: .codespell.exclude
         ignore_words_file: .codespell.words.exclude
