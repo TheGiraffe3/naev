@@ -147,7 +147,7 @@ static os_opts duration_opts = { N_( "Duration" ), _UNIT_TIME, 0, 0, 1, 1 };
 static os_opts cooldown_opts = { N_( "Cooldown" ), _UNIT_TIME, 0, 0, 1, 1 };
 static os_opts lockon_opts   = { N_( "Lock-On" ), _UNIT_TIME, 0, 0, 1, 0 };
 static os_opts inflight_calib_opts = {
-   N_( "Inflight Calibration" ), _UNIT_TIME, 0, 0, 1, 1 };
+   N_( "In-flight Calibration" ), _UNIT_TIME, 0, 0, 1, 1 };
 static os_opts initial_speed_opts = {
    N_( "Launch Speed" ), _UNIT_SPEED, 0, 0, 1, 0 };
 static os_opts accel_opts     = { N_( "Accel" ), _UNIT_ACCEL, 0, 0, 1, 0 };
@@ -165,9 +165,8 @@ static os_opts shots_delay_opts = {
 
 static int outfit_cmp( const void *p1, const void *p2 )
 {
-   const Outfit *o1, *o2;
-   o1 = (const Outfit *)p1;
-   o2 = (const Outfit *)p2;
+   const Outfit *o1 = p1;
+   const Outfit *o2 = p2;
    return strcmp( o1->name, o2->name );
 }
 
@@ -1474,6 +1473,15 @@ static int outfit_loadGFX( Outfit *temp, const xmlNodePtr node )
       flags |= OPENGL_TEX_MAPTRANS;
    gfx->tex = xml_parseTexture( node, OUTFIT_GFX_PATH "space/%s", 6, 6, flags );
    gfx->size = ( gfx->tex->sw + gfx->tex->sh ) * 0.5;
+
+   /* See if there is a collision size, or an override. */
+   char *col;
+   xmlr_attr_strd( node, "col_size", col );
+   if ( col != NULL ) {
+      outfit_setProp( temp, OUTFIT_PROP_WEAP_COLLISION_OVERRIDE );
+      gfx->col_size = strtod( col, NULL );
+      free( col );
+   }
 
    /* Validity check: there must be 1 polygon per sprite. */
    if ( array_size( gfx->polygon.views ) <= 0 )
