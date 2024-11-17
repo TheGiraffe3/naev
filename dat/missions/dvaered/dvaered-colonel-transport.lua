@@ -20,22 +20,21 @@ local fmt = require "format"
 
 function create ()
    mem.talked = false
-   --if not misn.claim(missys) then misn.finish(false) end
    misn.setNPC( _("A Dvaered colonel"), "devaered/dv_military_f6.webp", _("This soldier seems to be a colonel.") )
 end
 
 function accept ()
    local text
    else
-      text = fmt.f(_([[You approach the Dvaered, who seems to be a soldier, probably one of the colonel rank. Arriving at their table, you are greeted, "Hello! Could you escort my ship, an Arsenal to {pnt} in the {sys} system? I'll give you {rwd} for it, but I can't tell you why. Well, what do you say?"]]),
+      text = fmt.f(_([[You approach the Dvaered, who seems to be a soldier, probably one of the colonel rank. Arriving at their table, you are greeted, "Hello! Could you escort my ship, an Arsenal, to {pnt} in the {sys} system? I'll give you {rwd} for it, but I can't tell you why. Well, what do you say?"]]),
          {pnt=misplanet, sys=missys, rwd=reward_text})
       mem.talked = true
    end
    if vntk.yesno( _("Escort Agreed"), text ) then
-      vntk.msg( _("Escort Agreed"), _([["Perfect! I'll pay you as soon as we get there.]]) )
+      vntk.msg( _("Escort Agreed"), _([["Perfect! I'll pay you as soon as we get there."]]) )
       misn.accept()
       misn.osdCreate(_("Dvaered colonel escort"), {
-         fmt.f(_("Escort a Dvaered colonel flying an Arsenal to {pnt} in the {sys} system. You haven't been told why, but there may be a large payment.)"), {pnt=mem.destspob, sys=mem.destsys}),
+         fmt.f(_("Escort a Dvaered colonel flying an Arsenal to {pnt} in the {sys} system. You haven't been told why, but there may be a large payment.")), {pnt=mem.destspob, sys=mem.destsys}),
       }
       misn.markerAdd( mem.destspob )
       hook.land( "land" )
